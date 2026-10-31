@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>洗衣机运行周期数据分析软件</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:18px 16px 40px;background:#f4f6f9;font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;color:#1f2937}
+  .wrap{max-width:1680px;margin:0 auto}
+  h1{font-size:21px;margin:2px 0 2px}
+  .sub{font-size:12.5px;color:#6b7280;margin-bottom:12px}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:14px}
+  /* uploader */
+  #drop{border:2px dashed #b7c2d4;border-radius:10px;padding:30px 20px;text-align:center;color:#5b677a;cursor:pointer;transition:.15s;background:#fafbfd}
+  #drop.hover{border-color:#2563eb;background:#eff6ff;color:#1d4ed8}
+  #drop .big{font-size:15px;font-weight:bold;margin-bottom:6px}
+  #drop .small{font-size:12px;color:#8a94a6}
+  .opts{margin-top:10px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:#4b5563}
+  select{font-size:12.5px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff}
+  button{font-size:12.5px;padding:5px 14px;border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer}
+  button.ghost{background:#fff;color:#2563eb}
+  button:disabled{opacity:.45;cursor:default}
+  .fileinfo{margin-top:10px;font-size:12.5px;color:#374151;display:none}
+  .fileinfo b{color:#111827}
+  /* alerts */
+  .alert{border-radius:8px;padding:9px 12px;font-size:12.5px;line-height:1.6;margin-top:10px;display:none}
+  .alert.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+  .alert.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
+  .alert.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+  /* kpi */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+  .kpi{border:1px solid #e5e7eb;border-radius:9px;padding:10px 12px;background:#fcfdff}
+  .kpi .k{font-size:12px;color:#6b7280;margin-bottom:4px}
+  .kpi .v{font-size:19px;font-weight:bold;color:#111827}
+  .kpi .u{font-size:11.5px;color:#9ca3af;font-weight:normal;margin-left:3px}
+  .kpi .d{font-size:11px;color:#9ca3af;margin-top:2px}
+  /* chart */
+  canvas{width:100%;display:block}
+  .legend span{display:inline-block;margin-right:18px;font-size:12.5px}
+  .sw{display:inline-block;width:22px;height:4px;vertical-align:middle;margin-right:6px;border-radius:2px}
+  /* table */
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{border:1px solid #dbe1e8;padding:5px 8px;text-align:center;white-space:nowrap}
+  th{background:#eef2f7}
+  td.l{text-align:left;white-space:normal}
+  .tbl-scroll{overflow-x:auto}
+  .verify{font-size:12.5px;line-height:1.9}
+  .verify .pass{color:#166534;font-weight:bold}
+  .verify .fail{color:#991b1b;font-weight:bold}
+  .mono{font-family:Consolas,Menlo,monospace}
+  .hidden{display:none!important}
+  h2{font-size:15px;margin:0 0 10px}
+  .note{font-size:11.5px;color:#6b7280;margin-top:8px;line-height:1.6}
+  /* 低版本浏览器不支持提示 */
+  #browser-warn{display:none;margin:18px auto;max-width:760px;background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:20px 24px;color:#991b1b;font-size:14px;line-height:1.8;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  #browser-warn h2{margin:0 0 8px;font-size:17px;color:#7f1d1d}
+  #browser-warn ul{margin:8px 0 0;padding-left:20px}
+  body.unsupported .wrap{display:none!important}
+  body.unsupported #browser-warn{display:block}
+</style>
+</head>
+<body>
+<div id="browser-warn">
+  <h2>当前浏览器版本过低，无法使用本工具</h2>
+  <p>本工具使用现代浏览器技术（ES6 语法、TextDecoder、Promise、IndexedDB 等）开发，您当前使用的浏览器（例如 Internet Explorer）不支持这些特性，页面无法正常运行。</p>
+  <p>请改用以下任一<b>现代浏览器</b>重新打开本文件（洗衣机数据分析软件.html）：</p>
+  <ul>
+    <li><b>Microsoft Edge</b>（Windows 10/11 自带，推荐）</li>
+    <li><b>Google Chrome</b></li>
+    <li><b>Firefox</b></li>
+  </ul>
+  <p>本工具完全离线，双击文件即可使用，无需联网或安装。</p>
+</div>
+<script>
+/* 浏览器兼容性检测（纯 ES5 编写，确保旧浏览器也能执行并显示提示） */
+(function(){
+  function syntaxOk(){
+    try{
+      new Function('return (()=>0)();');             // 箭头函数
+      new Function('var a=1,b=2;return `${a+b}`;');  // 模板字符串
+      new Function('var o={a:1};var {a}=o;return a;'); // 解构赋值
+      return true;
+    }catch(e){ return false; }
+  }
+  function apiOk(){
+    return !!(window.Promise && window.TextDecoder &&
+              Array.prototype.find && Array.prototype.fill &&
+              String.prototype.padStart && Math.log10);
+  }
+  if(!(syntaxOk() && apiOk())){
+    document.body.className += ' unsupported';
+  }
+})();
+</script>
+<div class="wrap">
+  <h1>洗衣机运行周期数据分析工具</h1>
+  <div class="sub">上传采集数据文件（Excel：.xlsx / .xls；或文本：.tsv / .csv / .txt，支持 GBK / UTF-8），自动识别相位节点、计算能耗水耗并生成曲线图。全程本地解析，数据不上传，可离线使用，可直接分析任意批次的表格数据。</div>
+
+  <div class="card">
+    <div id="drop">
+      <div class="big">点击选择文件，或将文件拖拽到此处</div>
+      <div class="small">需要字段：时间戳、功率(W)、累计用水量(L)、累计电量(kWh)</div>
+      <input type="file" id="file" accept=".xls,.xlsx,.xlsm,.tsv,.csv,.txt" style="display:none">
+    </div>
+    <div class="opts">
+      <label>编码：
+        <select id="enc">
+          <option value="auto" selected>自动识别（GBK / UTF-8）</option>
+          <option value="gbk">GBK</option>
+          <option value="utf-8">UTF-8</option>
+        </select>
+      </label>
+      <button id="reanalyze" class="ghost" disabled>重新分析</button>
+      <span id="parseMode" style="color:#9ca3af"></span>
+    </div>
+    <div class="fileinfo" id="fileinfo"></div>
+    <div class="alert err" id="alertErr"></div>
+    <div class="alert warn" id="alertWarn"></div>
+    <div class="alert ok" id="alertOk"></div>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="card">
+      <h2>核心参数</h2>
+      <div class="kpis" id="kpis"></div>
+    </div>
+
+    <div class="card">
+      <h2>自审查（全周期逐阶段时间段判定）</h2>
+      <div class="verify" id="verify"></div>
+    </div>
+
+    <div class="card">
+      <h2>运行曲线（功率 / 累计用水量 / 累计电量）</h2>
+      <canvas id="cv" width="1640" height="860"></canvas>
+      <div class="legend" style="margin-top:6px">
+        <span><i class="sw" style="background:#e11d48"></i>功率 P (W)</span>
+        <span><i class="sw" style="background:#2563eb"></i>累计用水量 (L)</span>
+        <span><i class="sw" style="background:#059669"></i>累计电量 (kWh)</span>
+        <span><i class="sw" style="background:#7c3aed;height:3px;border-top:1px dashed #7c3aed"></i>相位节点</span>
+        <span style="color:#9ca3af">■ 浅色底纹 = 相位区间</span>
+      </div>
+      <div class="note" id="chartNote"></div>
+    </div>
+
+    <div class="card">
+      <h2>相位节点明细</h2>
+      <div class="tbl-scroll">
+        <table id="tbl">
+          <thead><tr><th>相位节点</th><th>样本号</th><th>时钟时间</th><th>相对开始 (min)</th><th>功率 (W)</th><th>累计水量 (L)</th><th>累计电量 (kWh)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 本地 SheetJS，离线可用；加载失败时文本格式(TSV/CSV)仍可正常分析 -->
+<script src="lib/xlsx.full.min.js"></script>
+<script>
+'use strict';
+/* ============================================================
+ * 1. 解析：Excel(.xls/.xlsx) 与 文本(.tsv/.csv) 统一管线
+ *    编码识别、表头列映射、时间/数值解析
+ * ============================================================ */
+
+const DEFAULT_COLS = { time:0, power:28, water1:20, water2:23, elec:29, heaterCur:-1 };
+
+function parseTime(s){
+  // 兼容 2026/8/28  23:43:33.000000 与 2026-8-28 23:43:33
+  const m = String(s).trim().replace(/\s+/g,' ').match(
+    /(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})[ T](\d{1,2}):(\d{1,2}):(\d{2})(?:\.(\d+))?/);
+  if(!m) return null;
+  const ms = m[7] ? Math.round(Number('0.'+m[7])*1000) : 0;
+  return new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6], ms);
+}
+const pnum = s => { const v = parseFloat(String(s).trim()); return isFinite(v)?v:0; };
+const pad2 = n => String(n).padStart(2,'0');
+function fmtClock(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+' '+pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
+function fmtHMS(d){ return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
+
+function mapColumns(headerFields){
+  // 在表头中按关键词找列；找不到回退默认列位
+  const cols = { ...DEFAULT_COLS };
+  const found = { power:false, water1:false, water2:false, elec:false, heaterCur:false };
+  let singleWater = false;
+  headerFields.forEach((raw, idx) => {
+    const h = String(raw==null?'':raw).toLowerCase().replace(/\s+/g,'');
+    if(/用水量1|水量1|用水1|water1|water\(1\)/.test(h))   { cols.water1 = idx; found.water1 = true; }
+    else if(/用水量2|水量2|用水2|water2|water\(2\)/.test(h)){ cols.water2 = idx; found.water2 = true; }
+    else if(/加热器电流|heater/.test(h))   { cols.heaterCur = idx; found.heaterCur = true; }
+    else if(/电量|kwh|kw\.h|energy|电能/.test(h)){ cols.elec = idx; found.elec = true; }
+    else if(/功率|power/.test(h))        { cols.power = idx; found.power = true; }
+    else if(!found.water1 && /^用水量|^水量|^water[\(\s（]/.test(h)){ cols.water1 = idx; found.water1 = true; singleWater = true; }
+  });
+  // 单水表机型（表头只有"用水量(L)"无编号）：禁用第二水表回退，防止误读相邻通道（如电流(A)列）
+  // —— F70267AB-1# 教训：默认列位 23 落在电流(A)上，被水表选择逻辑当成第二水表并触发合并
+  if(singleWater && !found.water2){ cols.water2 = -1; found.water2 = false; }
+  return { cols, found };
+}
+
+/* Excel 1900 日期系统序列号 → Date（epoch 1899-12-30，自动兼容 1900 闰年伪差） */
+function excelSerialToDate(v){
+  return new Date(Math.round((v - 25569) * 86400 * 1000) + new Date(Date.UTC(1970,0,1)).getTime());
+}
+/* 单元格 → Date：支持 Date 对象、Excel 日期序列号、时间字符串 */
+function cellToDate(v){
+  if(v instanceof Date && !isNaN(v.getTime())) return v;
+  if(typeof v === 'number'){
+    if(v >= 1 && v <= 2958465) return excelSerialToDate(v); // 1900-01-01 ~ 9999-12-31
+    return null; // unix 秒/毫秒时间戳不在此采集格式中，不做猜测
+  }
+  if(typeof v === 'string') return parseTime(v);
+  return null;
+}
+function cellNum(v){
+  if(typeof v === 'number') return isFinite(v)?v:0;
+  return pnum(v);
+}
+
+/* 统一行管线：rows 为二维数组（文本行已 split；Excel 单元格为原生值） */
+function parseRows(rows, source){
+  // 表头取首个非空行
+  let headerRow = -1, headerFields = [];
+  for(let i=0;i<rows.length;i++){
+    const r = rows[i];
+    if(r && r.some(c=>String(c==null?'':c).trim().length)){ headerRow=i; headerFields=r; break; }
+  }
+  const { cols, found } = mapColumns(headerFields);
+  const needMax = Math.max(cols.power, cols.water1, cols.elec, cols.heaterCur>=0?cols.heaterCur:0);
+
+  // 数据起点：第一列可解析为时间戳且列数足够的行
+  const dt=[], pw=[], w1=[], w2=[], el=[], hc=[];
+  let firstDataLine=-1;
+  for(let i=0;i<rows.length;i++){
+    const f = rows[i];
+    if(!f) continue;
+    const d0 = cellToDate(f[0]);
+    if(d0 && f.length > needMax){
+      firstDataLine = i;
+      for(let j=i;j<rows.length;j++){
+        const g = rows[j];
+        if(!g || !g.some(c=>String(c==null?'':c).trim().length)) continue;
+        if(typeof g[0]==='string' && g[0].trim().charAt(0)==='t') continue; // 残留 time 表头
+        const dd = cellToDate(g[0]);
+        if(!dd) continue;
+        dt.push(dd);
+        pw.push(cellNum(g[cols.power]));
+        w1.push(cellNum(g[cols.water1]));
+        w2.push(cols.water2<0 ? 0 : cellNum(g[cols.water2]));
+        el.push(cellNum(g[cols.elec]));
+        hc.push(cols.heaterCur>=0 ? cellNum(g[cols.heaterCur]) : 0);
+      }
+      // 0.5 s 采样降为 1 Hz（F124R9ZB 类机型）：仅当平均采样间隔 <0.75 s 时生效，
+      // 每秒保留首个样本，保证下游所有按样本计数的时间阈值（静默秒数/电机启动窗口等）语义不变；
+      // 1 s 采样文件完全不变（历史批次偶然的同秒重复行也必须原样保留）
+      if(dt.length>5){
+        const avgMs = (dt[dt.length-1].getTime()-dt[0].getTime())/(dt.length-1);
+        if(avgMs<750){
+          const ndt=[], npw=[], nw1=[], nw2=[], nel=[], nhc=[];
+          let prevSec=NaN;
+          for(let k=0;k<dt.length;k++){
+            const s=Math.floor(dt[k].getTime()/1000);
+            if(s===prevSec) continue;
+            prevSec=s;
+            ndt.push(dt[k]); npw.push(pw[k]); nw1.push(w1[k]); nw2.push(w2[k]); nel.push(el[k]); nhc.push(hc[k]);
+          }
+          dt.length=0; pw.length=0; w1.length=0; w2.length=0; el.length=0; hc.length=0;
+          dt.push(...ndt); pw.push(...npw); w1.push(...nw1); w2.push(...nw2); el.push(...nel); hc.push(...nhc);
+        }
+      }
+      break;
+    }
+  }
+  return { n:dt.length, dt, pw, w1, w2, el, hc, cols, found, firstDataLine, headerRow,
+           headerFields: headerFields.map(h=>String(h==null?'':h)), source };
+}
+
+/* 文本文件（TSV/CSV/伪装成 xls 的制表符文本）→ 二维字符串数组 */
+function parseTextRows(text){
+  const lines = text.split(/\r\n|\n|\r/);
+  const sample = lines.find(l=>l.trim().length) || '';
+  let delim = '\t';
+  if((sample.match(/\t/g)||[]).length < 5 && (sample.match(/,/g)||[]).length >= 5) delim = ',';
+  return { rows: lines.filter(l=>l.trim().length).map(l=>l.split(delim)), delim };
+}
+
+/* Excel 工作簿（.xls/.xlsx/.xlsm）→ 二维数组；取数据行最多的工作表 */
+function parseExcelRows(buf){
+  if(typeof XLSX === 'undefined'){
+    throw new Error('Excel 解析库未加载（lib/xlsx.full.min.js 缺失）。请使用完整软件包，或将文件另存为 CSV 后上传。');
+  }
+  const wb = XLSX.read(buf, { type:'array', cellDates:true });
+  if(!wb.SheetNames.length) throw new Error('工作簿中没有工作表。');
+  let best=null, bestName='', bestCount=0;
+  wb.SheetNames.forEach(name=>{
+    const ws = wb.Sheets[name];
+    const rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:'', blankrows:false });
+    let cnt=0; for(const r of rows){ if(r.some(c=>String(c==null?'':c).trim().length)) cnt++; }
+    if(cnt > bestCount){ bestCount=cnt; best=rows; bestName=name; }
+  });
+  return { rows:best, sheetName:bestName, allSheets:wb.SheetNames };
+}
+
+/* ============================================================
+ * 2. 节点识别（与 analyze.ps1 完全一致的判定规则）
+ * ============================================================ */
+
+function detectNodes(d){
+  const { n, pw, dt, hc } = d;
+
+  /* ---- 用水量列自动选择：可用列=有随相位变化的进水脉冲（非单调漂移/孤立跳变） ---- */
+  function profile(arr){
+    let pos=0, neg=0;
+    const bursts=[];
+    let inB=false, bs=0, last=0, bvol=0;
+    for(let i=1;i<arr.length;i++){
+      const dv=arr[i]-arr[i-1];
+      if(dv>0.001) pos+=dv;
+      if(dv<-0.001) neg-=dv;
+      if(dv>0.01){
+        if(!inB){ inB=true; bs=i; bvol=0; }
+        bvol+=dv; last=i;
+      } else if(inB && (i-last)>60){
+        if(bvol>0.1) bursts.push({s:bs,e:last,v:bvol});
+        inB=false;
+      }
+    }
+    if(inB && bvol>0.1) bursts.push({s:bs,e:last,v:bvol});
+    return {pos,neg,bursts};
+  }
+  const cand=[
+    {key:'w1', arr:d.w1, name:'用水量1（列'+(d.cols.water1+1)+'）'}
+  ];
+  if(d.cols.water2>=0) cand.push({key:'w2', arr:d.w2, name:'用水量2（列'+(d.cols.water2+1)+'）'});
+  cand.forEach(c=>{ c.pf=profile(c.arr); });
+  let sel;
+  const act=cand.filter(c=>c.pf.bursts.length>=1 && c.pf.pos>1);
+  d.wWarn='';
+  if(act.length===0){ sel=cand[0]; d.wWarn='两个用水量列均未检出有效进水脉冲，默认使用'+sel.name; }
+  else if(act.length===1){ sel=act[0]; d.wWarn='已自动选择有完整周期变化的 '+sel.name+'（另一列无进水特征，已排除）'; }
+  else {
+    const A=act[0].pf.bursts, B=act[1].pf.bursts;
+    let paired=0;
+    A.forEach(a=>{ if(B.some(b=>Math.abs(b.s-a.s)<=120)) paired++; });
+    // 真双进水：每次进水两表都跳动 → 两列 burst 数均 ≥2 且起点交错配对率 ≥50%
+    if(Math.min(A.length,B.length)>=2 && paired/Math.min(A.length,B.length)>=0.5){
+      sel={key:'sum', name:'双进水合计（用水量1+2）', arr:d.w1.map((v,i)=>v+d.w2[i])};
+      sel.pf=profile(sel.arr);
+      d.wWarn='检测到双进水（两表脉冲交错），已合并两表计量';
+    } else {
+      sel=act.sort((a,b)=>(b.pf.bursts.length-a.pf.bursts.length)||(b.pf.pos-a.pf.pos))[0];
+      d.wWarn='已选择进水周期变化更完整的 '+sel.name+'（另一列仅开机孤立跳变或脉冲不成周期，按单进水排除）';
+    }
+  }
+  d.W=sel.arr; d.wname=sel.name;
+  d.wType = sel.pf.neg>0.5 ? 'level' : 'cumulative';
+  const w=d.W;
+  const sec = i => (dt[i]-dt[0])/1000;
+
+  // 水量增量（基于选定列）
+  const dW = new Array(n).fill(0);
+  for(let i=1;i<n;i++) dW[i] = w[i]-w[i-1];
+
+  // opStart
+  const n0 = 0;
+  // mainStart：首个 dW>0.001
+  let n1 = -1;
+  for(let i=1;i<n;i++){ if(dW[i]>0.001){ n1=i; break; } }
+
+  // 漂洗进水：基于已选水表的进水脉冲谱——单段持续进水量≥0.3 L 才计为一次漂洗进水
+  //（顶部补水 0.1-0.2 L 类小脉冲自动排除）
+  const wBursts = (sel.pf.bursts||[]).filter(b=>b.v>=0.3);
+
+  // 加热：首个/末个 P>1000。
+  // 低功率加热器机型（峰值不足 1000 W，如 LG 澳大利亚的 824 W 电加热，快频通断、单次
+  // 通电仅 ~1 s）：P>1000 探测不到，且「P>550 连续段」也不存在。改以规则⑩识别——
+  // 60 s 滚动窗内 >450 W 样本 ≥18 个视为"加热通电中"；间隔 ≤120 s 的相邻窗合并；
+  // 段跨 ≥120 s、至少 2 段、首末通电点总跨 ≥600 s、通电样本合计 ≥300 才判定为温控加热。
+  // 探测上界 = 大间隔后的首个进水脉冲——脱水电机的高功率冲刺都发生在其后，不会误判
+  let heatLo=-1, heatHi=-1, heatCycle=false, heatSegs=[];
+  if(n1>=0){
+    for(let i=n1;i<n;i++){ if(pw[i]>1000){ heatLo=i; break; } }
+    if(heatLo>=0){
+      heatHi=heatLo;
+      for(let i=heatLo;i<n;i++){ if(pw[i]>1000) heatHi=i; }
+    } else if(wBursts.length){
+      let bound = n;
+      let gi=0, gv=-1;
+      for(let k=0;k<wBursts.length-1;k++){ const g0=wBursts[k+1].s-wBursts[k].e; if(g0>gv){gv=g0;gi=k;} }
+      if(gv>=1800 && gi+1<wBursts.length) bound = wBursts[gi+1].s;
+      const hot=[];
+      for(let i=n1;i+60<bound;i++){
+        let c=0;
+        for(let k=i;k<i+60 && k<bound;k++){ if(pw[k]>450) c++; }
+        if(c>=18) hot.push([i,i+59]);
+      }
+      const m=[];
+      for(const hw of hot){
+        if(m.length && hw[0]-m[m.length-1][1]<=120) m[m.length-1][1]=hw[1];
+        else m.push(hw.slice());
+      }
+      heatSegs = m.filter(hw=>hw[1]-hw[0]+1>=120);
+      let lo=-1, hi=-1, on=0;
+      for(let i=n1;i<bound;i++){ if(pw[i]>450){ if(lo<0) lo=i; hi=i; on++; } }
+      if(heatSegs.length>=2 && lo>=0 && (hi-lo+1)>=600 && on>=300){
+        // 规则⑩闸门：若文件带「加热器电流」通道，要求通电段内实测电流 ≥1 A——
+        // 电机负载快频脉冲同样满足功率窗（LG 澳大利亚 2# 教训：830 W 脉冲实为洗涤电机，
+        // 加热器电流恒 0、主洗水温不升反降），通道峰值 <1 A 判加热器从未通电、不设加热段
+        let hcOk=true;
+        if(d.cols.heaterCur>=0){
+          let hcMx=0;
+          for(let i=lo;i<=hi;i++){ if(hc[i]>hcMx) hcMx=hc[i]; }
+          if(hcMx<1.0){
+            hcOk=false;
+            d.wWarn=(d.wWarn?d.wWarn+'；':'')+'加热器电流通道峰值仅 '+hcMx.toFixed(3)+' A（加热器未通电），高功率脉冲判为电机负载，不设加热段';
+          }
+        }
+        if(hcOk){ heatLo=lo; heatHi=hi; heatCycle=true; }
+      }
+    }
+  }
+  let heatOn=0, heatSpan=0, heatMaxGap=0, lowCnt=0, curGap=0;
+  if(heatHi>=0){
+    if(heatCycle){
+      heatSpan = heatHi-heatLo+1;
+      heatOn = 0;
+      for(let i=heatLo;i<=heatHi;i++){ if(pw[i]>450) heatOn++; }
+      for(let k=0;k<heatSegs.length-1;k++){ const g=heatSegs[k+1][0]-heatSegs[k][1]-1; if(g>heatMaxGap) heatMaxGap=g; }
+    } else {
+      for(let k=heatLo;k<=heatHi;k++){
+        if(pw[k]<=1000){ lowCnt++; curGap++; if(curGap>heatMaxGap) heatMaxGap=curGap; }
+        else curGap=0;
+      }
+      heatSpan = heatHi-heatLo+1;
+      heatOn = heatSpan-lowCnt;
+    }
+  }
+  const fills=[];
+  if(n1>=0){
+    if(heatHi>=0){
+      // 加热结束后可能存在主洗保温期补水（小量进水）——按"最大间隔+体积比"切除前段小补水，
+      // 防止把保温补水误判为漂洗进水（主洗结束应以第 1 次真正漂洗进水为准）
+      const after = wBursts.filter(b=>b.s>heatHi);
+      let cut=0;
+      if(after.length>1){
+        let gi=0, gv=-1;
+        for(let k=0;k<after.length-1;k++){ const g0=after[k+1].s-after[k].e; if(g0>gv){gv=g0;gi=k;} }
+        if(gv>=1800){
+          let prM=0; for(let k=0;k<=gi;k++) if(after[k].v>prM) prM=after[k].v;
+          let poM=0; for(let k=gi+1;k<after.length;k++) if(after[k].v>poM) poM=after[k].v;
+          if(prM < poM*0.25) cut=gi+1;
+        }
+      }
+      for(let k=cut;k<after.length;k++) fills.push({s:after[k].s,e:after[k].e,v:after[k].v});
+    } else {
+      // 无加热段：把主洗进水也纳入脉冲列表，按最大间隔切分——最大间隔之前（含主洗进水）
+      // 为主洗相位，之后均为漂洗进水（若只取主洗进水之后的脉冲，进 2 次漂洗时会因
+      // 仅剩一个间隔而把第 1 次漂洗误切掉）
+      const all = wBursts.filter(b=>b.s>=n1);
+      if(all.length>1){
+        let gi=0, gv=-1;
+        for(let k=0;k<all.length-1;k++){ const g0=all[k+1].s-all[k].e; if(g0>gv){gv=g0;gi=k;} }
+        for(let k=gi+1;k<all.length;k++) fills.push({s:all[k].s,e:all[k].e,v:all[k].v});
+      }
+    }
+  }
+  // 漂洗阶段内可能存在分段进水（如漂洗洗涤过程中的正常补水）：
+  // 与上一段进水起始间隔短（≤120 s）且体积远小于对方（<25%）的脉冲，视为同一次漂洗内的
+  // 正常进水，合并进上一段，不单独立漂洗节点（各次漂洗的用水量和时长差别不应过大）
+  if(fills.length>1){
+    const merged=[];
+    for(const b of fills){
+      const p = merged[merged.length-1];
+      if(p && (b.s-p.e)<=120 && Math.min(b.v,p.v) < 0.25*Math.max(b.v,p.v)){
+        p.e=b.e; p.v+=b.v;
+      } else merged.push({s:b.s,e:b.e,v:b.v});
+    }
+    fills.length=0;
+    for(const b of merged) fills.push(b);
+  }
+  // 漂洗均匀性自检：每次漂洗的用水量与时长差别不应过大，少量进水不能算作漂洗——
+  // 凡单段体积 < 最大段 50% 的候选（主洗保温补水/回洗补水等），剔除该节点，
+  // 其水量自然计入所在相位（体积最大段为当期真实漂洗进水尺度的基准；真漂洗间
+  // 体积比一般在 0.85 以上，补水通常不足一半）
+  if(fills.length>1){
+    for(let pass=0;pass<4;pass++){
+      let mx=0; for(const b of fills) if(b.v>mx) mx=b.v;
+      let cut=-1, cutV=1e9;
+      for(let k=0;k<fills.length;k++) if(fills[k].v < mx*0.5 && fills[k].v<cutV){ cutV=fills[k].v; cut=k; }
+      if(cut<0) break;
+      fills.splice(cut,1);
+    }
+  }
+  // 漂洗相位时长均匀性自检：某候选体积虽不低于最大段一半，但若其下游相位时长
+  // 远超其它漂洗（>2 倍中位数）且体积不足最大段 60%，说明它不是漂洗而是主洗期
+  // 补水（如 F124R9ZB 主洗保温/浸泡期的 7.6 L 补水——加热保温周期一直持续到
+  // 其后第一次真漂洗进水之前才结束）；剔除该节点，水量自然计入主洗相位
+  if(fills.length>2){
+    for(let pass=0;pass<4;pass++){
+      if(fills.length<=2) break;
+      let mx=0; for(const b of fills) if(b.v>mx) mx=b.v;
+      const durs=[];
+      for(let k=0;k<fills.length-1;k++) durs.push(fills[k+1].s-fills[k].s);
+      const sorted=durs.slice().sort((a,b)=>a-b);
+      const med = sorted.length%2 ? sorted[(sorted.length-1)>>1]
+                                  : (sorted[sorted.length/2-1]+sorted[sorted.length/2])/2;
+      let cut=-1, cutR=0;
+      for(let k=0;k<fills.length-1;k++){
+        if(durs[k] > med*2 && fills[k].v < mx*0.6){
+          const r=durs[k]/med;
+          if(r>cutR){ cutR=r; cut=k; }
+        }
+      }
+      if(cut<0) break;
+      fills.splice(cut,1);
+    }
+  }
+  // 进水节点 = 阀门开启时刻 = 首个进水脉冲前一秒（水表尚未上升，与机器程序时刻一致）
+  const rinses=fills.map(f=>f.s-1);
+  const r1 = fills.length ? fills[0].s-1 : -1;
+  const r1end = fills.length ? fills[0].e : -1;
+  const lastFillEnd = fills.length ? fills[fills.length-1].e : -1;
+
+  // 最终脱水开始：优先捕捉"排水静默 → 电机启动"的预脱水起点（之后均为最终脱水）
+  let spinOn=-1;
+  if(lastFillEnd>=0){
+    let lastWInc=-1;
+    for(let i=lastFillEnd;i<n;i++){ if(dW[i]>0.01) lastWInc=i; }
+    const sFrom = lastWInc>=0 ? lastWInc : lastFillEnd;
+    let firstP300=-1;
+    for(let k=sFrom;k<n;k++){ if(pw[k]>300){ firstP300=k; break; } }
+    let i=sFrom;
+    while(i<n-45 && (firstP300<0 || i<firstP300)){
+      if(pw[i]<=5){
+        let qe=i; while(qe+1<n && pw[qe+1]<=5) qe++;
+        const L=qe-i+1;
+        if(L>=2){
+          let m1=0; for(let k=qe+1;k<=Math.min(qe+12,n-1);k++) if(pw[k]>m1) m1=pw[k];
+          let m2=0; for(let k=i+25;k<=Math.min(i+40,n-1);k++) if(pw[k]>m2) m2=pw[k];
+          if(m1>=90 && m2>=90){ spinOn = i + (L>>1); break; }
+        }
+        i=qe+1;
+      } else i++;
+    }
+    if(spinOn<0){
+      // 二次静默扫描（T120R-2# 类场景）：排水泵在进水结束后的脉冲可达 >300 W，会把首次
+      // 扫描上限（首个 P>300）截得过早。上限改用「首个持续高功率段」（5 点内 ≥3 点 >300，
+      // 排水孤立脉冲不满足）；静默要求 ≥5 s（跳过排水脉冲之间 1~4 s 的断续间隙）
+      let cap2=-1;
+      for(let k=sFrom;k+4<n;k++){ let c=0; for(let m=0;m<5;m++) if(pw[k+m]>300) c++; if(c>=3){ cap2=k; break; } }
+      const lim2 = cap2<0 ? n-45 : cap2;
+      let j=sFrom;
+      while(j<lim2){
+        if(pw[j]<=5){
+          let qe=j; while(qe+1<n && pw[qe+1]<=5) qe++;
+          const L=qe-j+1;
+          if(L>=5){
+            let m1=0; for(let k=qe+1;k<=Math.min(qe+12,n-1);k++) if(pw[k]>m1) m1=pw[k];
+            let m2=0; for(let k=j+25;k<=Math.min(j+40,n-1);k++) if(pw[k]>m2) m2=pw[k];
+            if(m1>=90 && m2>=90){ spinOn = j + (L>>1); break; }
+          }
+          j=qe+1;
+        } else j++;
+      }
+    }
+    if(spinOn<0){
+      // 回退：排水结束后首个连续电机启动段起点（P≥90 持续、25 s 窗口内 ≥90 样本 ≥20 个，
+      // 且其后 25~300 s 内出现 P>300 高速段）。排除洗涤搅动脉冲与排水泵孤立脉冲
+      for(let i=lastFillEnd;i<n-26;i++){
+        if(pw[i]>=90 && pw[i+1]>=90 && pw[i+2]>=90){
+          let cnt=0;
+          for(let k=0;k<=25 && i+k<n;k++) if(pw[i+k]>=90) cnt++;
+          if(cnt<20) continue;
+          for(let k=i+25;k<=Math.min(i+300,n-1);k++){
+            if(pw[k]>300){ spinOn=i; break; }
+          }
+        }
+        if(spinOn>=0) break;
+      }
+    }
+    if(spinOn<0){
+      // 最终回退：高速升速点（无独立预脱水段时）
+      for(let i=lastFillEnd;i<n-25;i++){ if(pw[i]>80 && pw[i+25]>300){ spinOn=i; break; } }
+    }
+    if(spinOn<0){
+      // 回退C（无 P>300 W 机型，如 LG 热泵洗烘机：脱水/烘干峰值<300 W、待机基线>5 W）：
+      // 最后一次进水后，取「首个持续电机启动段」起点：P>20 W 且其后 180 s 内无
+      // ≥8 s 连续 P≤10 W 回落（排除 10 s 通断的洗涤搅动脉冲）；命中回落后跳到回落段之后继续
+      let i=lastFillEnd;
+      while(i<n-8){
+        if(pw[i]>20){
+          let drop=-1;
+          for(let k=i;k<i+180 && k+7<n;k++){
+            let run=true;
+            for(let m=0;m<8;m++){ if(pw[k+m]>10){ run=false; break; } }
+            if(run){ drop=k; break; }
+          }
+          if(drop<0){ spinOn=i; break; }
+          i=drop+1;
+        } else i++;
+      }
+    }
+    if(spinOn<0){
+      // 回退D（LG 澳大利亚 2# 类场景）：最后一次进水后没有显著最终脱水——电机活动仅
+      // 数十秒且峰值 <150 W（排残水/抖散类），随后即进入长时恒待机平台。取最后进水
+      // 增量的下一个采样起，首个「P≥30 且其后 60 s 内最大 P≥60」的电机活动点
+      const from = lastWInc>=0 ? lastWInc+1 : lastFillEnd+1;
+      for(let i=from;i<n-60;i++){
+        if(pw[i]>=30){
+          let mx=0;
+          for(let k=i+1;k<=i+60 && k<n;k++){ if(pw[k]>mx) mx=pw[k]; }
+          if(mx>=60){ spinOn=i; break; }
+        }
+      }
+    }
+  }
+  // 高速段（P>300，gap≤120 合并）
+  const segs=[];
+  if(spinOn>=0){
+    let i=spinOn;
+    while(i<n){
+      if(pw[i]>300){
+        let s=i; while(i<n && pw[i]>300) i++;
+        const e=i-1;
+        if(segs.length && (s-segs[segs.length-1][1])<=120) segs[segs.length-1][1]=e;
+        else segs.push([s,e]);
+      } else i++;
+    }
+  }
+  let spinHiE = segs.length ? segs[segs.length-1][1] : -1;
+  // 无 P>300 W 高速段的机型（如 LG 洗烘机，脱水/烘干峰值 <300 W，待机基线 8.9 W）：
+  // 取最终脱水起点后最后一处 P≥60 W 活动段终点（自动排除待机基线，覆盖烘干低功率尾段）；
+  // 不足则放宽至 P≥20 W
+  if(spinHiE<0 && spinOn>=0){
+    for(let th=60; spinHiE<0 && th>=20; th-=20){
+      let i=spinOn, lastE=-1;
+      while(i<n){
+        if(pw[i]>=th){
+          while(i<n && pw[i]>=th) i++;
+          lastE=i-1;
+        } else i++;
+      }
+      if(lastE>=0) spinHiE=lastE;
+    }
+  }
+  const hiStart = -1; // 预脱水/主脱水/高速脱水已统一合并为「最终脱水」一项，不再单独标注主脱水开始节点
+
+  // 运行结束
+  let opEnd=-1;
+  if(spinHiE>=0){
+    // 平台预检（LG 澳大利亚 2# 类）：最终脱水结束后是「长时恒待机平台」（功率 3~12 W
+    // 连续数百秒直到文件尾，其后 0.x W 睡眠）。主规则「10 s <5 静默 + 前 40 s 有 >5 活动」
+    // 会命中平台偶然跌破 5 W 的抖动处，把运行结束拖晚十几分钟——先把平台识别为待机：
+    // 取 spinHiE 之后最后一个 ≥12 W 活动点，若其后存在 ≥300 s 连续、逐点都在 3~12 W
+    // 的恒平台段，则运行结束 = 活动点之后首个「其后 20 s 均 <12 W」的采样点
+    let ls=-1;
+    for(let i=n-1;i>spinHiE;i--){ if(pw[i]>=12){ ls=i; break; } }
+    let plat=-1;
+    if(ls>=0){
+      let run=0;
+      for(let i=ls+1;i<n;i++){
+        if(pw[i]>=3 && pw[i]<=12){ run++; if(run>=300){ plat=i; break; } }
+        else run=0;
+      }
+    }
+    if(plat>=0){
+      for(let i=ls+1;i<n-20;i++){
+        let ok=true;
+        for(let k=0;k<20;k++){ if(pw[i+k]>=12){ ok=false; break; } }
+        if(ok){ opEnd=i; break; }
+      }
+    }
+    if(opEnd<0){
+    for(let i=spinHiE+30;i<n-10;i++){
+      let ok=true;
+      for(let k=0;k<10;k++){ if(pw[i+k]>=5){ ok=false; break; } }
+      if(!ok) continue;
+      let p10=-1e9, p40=-1e9;
+      for(let k=1;k<=10 && i-k>=0;k++) if(pw[i-k]>p10) p10=pw[i-k];
+      for(let k=1;k<=40 && i-k>=0;k++) if(pw[i-k]>p40) p40=pw[i-k];
+      if(p10<100 && p40>5){ opEnd=i; break; }
+    }
+    if(opEnd<0){
+      // 回退（T120R-2# 类场景）：脱水结束后存在周期性 ≈5 W 脉冲（5 s 通 / 5 s 断，
+      // 约十个周期），主规则的「前 40 s 内须有 >5 W 活动」条件永远无法满足——
+      // 取最后一段 ≥5 W 活动之后的第一个采样点为运行结束（其后即持续待机 ~0.3 W）。
+      // 2026-10-08 LG 澳大利亚 2# 教训：若末尾是「长时恒待机平台」（尾段 ≥5 W 连续
+      // run 超过 30 s 直达文件结尾，如 5.5 W 恒待机），旧逻辑会把整个平台算作活动、
+      // 运行结束被拖到文件末尾；此时改取 spinHiE 之后首个「其后 20 s 均 <10 W」的
+      // 采样点（平台视为待机，不计入周期）
+      let lastAct=-1;
+      for(let i=n-1;i>spinHiE;i--){ if(pw[i]>=5){ lastAct=i; break; } }
+      if(lastAct>=0){
+        let s=lastAct;
+        while(s>spinHiE && pw[s-1]>=5) s--;
+        if(lastAct-s+1>30){
+          for(let i=spinHiE+1;i<n-20;i++){
+            let ok=true;
+            for(let k=0;k<20;k++){ if(pw[i+k]>=10){ ok=false; break; } }
+            if(ok){ opEnd=i; break; }
+          }
+        } else if(lastAct+1<n){ opEnd=lastAct+1; }
+      }
+    }
+    }
+  }
+  // 防皱点动
+  let antiCrease=0;
+  if(opEnd>=0){ for(let i=opEnd+10;i<n;i++){ if(pw[i]>7) antiCrease++; } }
+
+  return { n0,n1,heatLo,heatHi,heatOn,heatSpan,heatMaxGap,lowCnt,heatCycle,heatSegLen:heatSegs.length,r1,r1end,rinses,fills,
+           spinOn,hiStart,spinHiE,segs,opEnd,antiCrease,sec };
+}
+
+/* ============================================================
+ * 3. 参数计算（自动适配累计型/液位型水表与任意漂洗次数）
+ * ============================================================ */
+
+function calcParams(d, nd){
+  const { dt, el } = d;
+  const w = d.W;
+  const g = {};
+  const sec = nd.sec;
+  const sumPos=(a,b)=>{ let s=0; for(let i=Math.max(a,1);i<b;i++){ const dv=w[i]-w[i-1]; if(dv>0) s+=dv; } return s; };
+  g.totalSec   = sec(nd.opEnd);
+  g.mainDur    = (dt[nd.r1]-dt[nd.n1])/1000;
+  if(d.wType==='level'){
+    g.mainWater  = sumPos(nd.n1, nd.r1);
+    g.rinseW=[];
+    for(let k=0;k<nd.fills.length;k++){
+      const a=nd.fills[k].s, b=(k+1<nd.fills.length)?nd.fills[k+1].s:nd.spinOn;
+      g.rinseW.push(sumPos(a,b));
+    }
+    g.totalWater = sumPos(0, nd.spinHiE+1);
+  } else {
+    g.mainWater  = w[nd.r1-1]-w[nd.n1-1];
+    g.rinseW=[];
+    for(let k=0;k<nd.fills.length;k++){
+      const a=nd.fills[k].s, b=(k+1<nd.fills.length)?nd.fills[k+1].s:nd.spinOn;
+      g.rinseW.push(w[b-1]-w[a-1]);
+    }
+    g.totalWater = w[nd.spinHiE];
+  }
+  g.wName=d.wname; g.wType=d.wType; g.wWarn=d.wWarn;
+  g.water2End  = d.w2[nd.spinHiE];
+  g.elecSpin   = el[nd.spinHiE];
+  g.elecEnd    = el[nd.opEnd];
+  g.heatMin    = nd.heatHi>=0 ? nd.heatOn/60 : null;
+  g.preSec     = sec(nd.n1);
+  g.d3         = (dt[nd.opEnd]-dt[nd.spinOn])/1000;
+  // 阶段时长：待机 | 主洗 | 各漂洗段（末段至脱水起点）| 脱水收尾
+  g.segDur=[g.preSec, g.mainDur];
+  for(let k=1;k<nd.rinses.length;k++)
+    g.segDur.push((dt[nd.rinses[k]]-dt[nd.rinses[k-1]])/1000);
+  if(nd.rinses.length) g.segDur.push((dt[nd.spinOn]-dt[nd.rinses[nd.rinses.length-1]])/1000);
+  g.segDur.push(g.d3);
+  g.eMain = el[nd.r1]-el[0];
+  g.eRinseAll = el[nd.spinOn]-el[nd.r1];
+  g.eSpin = el[nd.opEnd]-el[nd.spinOn];
+  // 总电量 = 电量闭合公式合计（主洗 + 漂洗 + 脱水收尾）= 终点表值 - 起点基线
+  g.elecTotal = g.eMain + g.eRinseAll + g.eSpin;
+  return g;
+}
+
+/* ============================================================
+ * 4. 渲染：KPI / Canvas / 节点表 / 验证
+ * ============================================================ */
+
+function buildNodeList(nd){
+  const list=[
+    {f:'n0',      idx:nd.n0,      name:'运行开始'},
+    {f:'n1',      idx:nd.n1,      name:'主洗进水开始（主洗开始）'}
+  ];
+  if(nd.heatLo>=0) list.push({f:'heatLo', idx:nd.heatLo, name:'加热开始'});
+  if(nd.heatHi>=0) list.push({f:'heatHi', idx:nd.heatHi, name:'加热结束（功率恢复）'});
+  for(let k=0;k<nd.rinses.length;k++)
+    list.push({f:'r'+k, idx:nd.rinses[k], name:'第'+(k+1)+'次漂洗进水开始'+(k===0?'（=主洗结束）':'')});
+  list.push({f:'spinOn',  idx:nd.spinOn,  name:'最终脱水开始'});
+  list.push({f:'spinHiE', idx:nd.spinHiE, name:'最终脱水结束'});
+  list.push({f:'opEnd',   idx:nd.opEnd,   name:'运行结束（进入待机）'});
+  return list;
+}
+
+function niceStep(rawRange, target){
+  if(rawRange<=0) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawRange/target)));
+  const norm = rawRange/target/mag;
+  let s; if(norm<=1)s=1; else if(norm<=2)s=2; else if(norm<=2.5)s=2.5; else if(norm<=5)s=5; else s=10;
+  return s*mag;
+}
+
+function renderKpis(g, d, nd){
+  const mins = g.totalSec/60;
+  const hh=Math.floor(mins/60), mm=(mins-hh*60);
+  const peak = Math.max(...d.pw.slice(0, nd.opEnd+1));
+  const rinseCard = g.rinseW.length
+    ? {k:'漂洗次数 / 各次水量', v:g.rinseW.length, u:'次',
+       d:g.rinseW.map((x,i)=>'第'+(i+1)+'次 '+x.toFixed(2)+' L').join('，')}
+    : {k:'漂洗', v:'—', u:'', d:'未识别到漂洗进水'};
+  const heatCard = g.heatMin===null
+    ? {k:'加热时长', v:'—', u:'', d:'未检测到加热段（P>1000 W）'}
+    : {k:'加热时长', v:g.heatMin.toFixed(2), u:'min', d:nd.heatCycle?('低功率加热通断循环，峰值 '+peak.toFixed(0)+' W'):('连续高功率，峰值 '+peak.toFixed(0)+' W')};
+  const items = [
+    {k:'总运行时间', v:mins.toFixed(2), u:'min', d:Math.round(g.totalSec)+' s（'+hh+' h '+mm.toFixed(2)+' min）'},
+    {k:'总电量', v:g.elecTotal.toFixed(4), u:'kWh', d:'洗涤用电 '+g.eMain.toFixed(4)+' kWh'},
+    {k:'总用水量', v:g.totalWater.toFixed(3), u:'L', d:'有效水表：'+g.wName.replace(/（.*?）/,'')+(g.wType==='level'?'（液位型）':'')},
+    {k:'主洗时长 / 洗涤用水', v:g.mainDur/60>=1?(g.mainDur/60).toFixed(2):g.mainDur.toFixed(0), u:(g.mainDur/60>=1?'min':'s'), d:g.mainWater.toFixed(3)+' L'},
+    rinseCard,
+    heatCard
+  ];
+  document.getElementById('kpis').innerHTML = items.map(it=>
+    `<div class="kpi"><div class="k">${it.k}</div><div class="v">${it.v}<span class="u">${it.u}</span></div><div class="d">${it.d}</div></div>`
+  ).join('');
+}
+
+function renderChart(d, nd, g){
+  const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+  const W=cv.width, H=cv.height;
+  const M={l:70,r:78,t:152,b:46}, x0=M.l, x1=W-M.r;
+  const tMax = nd.sec(nd.opEnd);
+  // 绘图数据截止 opEnd，按像素降采样
+  const stride = Math.max(1, Math.floor((nd.opEnd+1)/(x1-x0)));
+  const T=[],P=[],WA=[],E=[];
+  for(let i=0;i<=nd.opEnd;i+=stride){
+    T.push(nd.sec(i)); P.push(d.pw[i]); WA.push(d.W[i]); E.push(d.el[i]);
+  }
+  const pMax = Math.max(...P), wMax = Math.max(...WA), eMax = Math.max(...E);
+  function panel(key,name,color,maxV,fill){
+    const step=niceStep(maxV*1.06||1,6), hi=Math.ceil((maxV*1.06||step)/step)*step;
+    const grid=[]; for(let v=0;v<=hi+1e-9;v+=step) grid.push(+v.toFixed(6));
+    return {key,name,color,fill,lo:0,hi:grid[grid.length-1],grid};
+  }
+  const panels=[
+    panel('p','功率 Power (W)','#e11d48',pMax,'rgba(225,29,72,.10)'),
+    panel('w','用水量 Water (L)','#2563eb',wMax,'rgba(37,99,235,.08)'),
+    panel('e','累计电量 Electricity (kWh)','#059669',eMax,'rgba(5,150,105,.08)')
+  ];
+  const ph=(H-M.t-M.b-2*14)/3;
+  panels.forEach((p,k)=>{p.y0=M.t+k*(ph+14);p.y1=p.y0+ph;});
+  const X=s=>x0+(s/tMax)*(x1-x0);
+  const Y=(v,p)=>p.y1-((v-p.lo)/(p.hi-p.lo))*(p.y1-p.y0);
+
+  const NL=buildNodeList(nd);
+  const N={};
+  NL.forEach(x=>{
+    N[x.f]={sec:nd.sec(x.idx), time:fmtHMS(d.dt[x.idx]),
+            short:x.name.replace(/（.*?）/g,'').replace('进水开始','进水')};
+  });
+  const S=f=>N[f]?N[f].sec:0;
+  const bands=[];
+  bands.push([S('n0'),S('n1'),'#f3f4f6','待机/准备']);
+  if(nd.heatHi>=0){
+    bands.push([S('n1'),S('heatLo'),'#fef3c7','主洗进水/浸湿']);
+    bands.push([S('heatLo'),S('heatHi'),'#fee2e2','主洗加热']);
+    const afterHeat = nd.rinses.length? S('r0') : S('spinOn');
+    if(afterHeat>S('heatHi')) bands.push([S('heatHi'),afterHeat,'#fef9c3','保温洗涤']);
+  } else {
+    const afterMain = nd.rinses.length? S('r0') : S('spinOn');
+    bands.push([S('n1'),afterMain,'#fef9c3','主洗洗涤']);
+  }
+  for(let k=0;k<nd.rinses.length;k++){
+    const a=S('r'+k), b=(k+1<nd.rinses.length)?S('r'+(k+1)):S('spinOn');
+    bands.push([a,b,'#dbeafe','第'+(k+1)+'次漂洗']);
+  }
+  if(nd.spinOn>=0){
+    bands.push([S('spinOn'),S('spinHiE'),'#ede9fe','最终脱水']);
+  }
+  if(nd.spinHiE>=0) bands.push([S('spinHiE'),S('opEnd'),'#f3f4f6','排水/结束']);
+
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#111827';ctx.font='bold 19px "Microsoft YaHei"';ctx.textAlign='center';
+  ctx.fillText('洗衣机完整运行周期：功率 / 用水量 / 电量 随时间变化曲线',W/2,30);
+  ctx.font='12.5px "Microsoft YaHei"';ctx.fillStyle='#4b5563';
+  ctx.fillText('数据周期：'+fmtClock(d.dt[0])+' ～ '+fmtClock(d.dt[nd.opEnd])+'（采样 1 s，共 '+(nd.opEnd+1)+' 点）',W/2,52);
+
+  panels.forEach(p=>bands.forEach(b=>{
+    ctx.fillStyle=b[2];
+    ctx.fillRect(X(b[0]),p.y0,Math.max(1,X(b[1])-X(b[0])),p.y1-p.y0);
+  }));
+  ctx.font='11px "Microsoft YaHei"';ctx.textAlign='center';
+  bands.forEach(b=>{
+    const cx=(X(b[0])+X(b[1]))/2;
+    if(X(b[1])-X(b[0])>44){ctx.fillStyle='#6b7280';ctx.fillText(b[3],cx,panels[0].y0+14);}
+  });
+
+  panels.forEach(p=>{
+    ctx.strokeStyle='#e5e7eb';ctx.lineWidth=1;
+    ctx.font='11px Arial';ctx.textAlign='right';ctx.textBaseline='middle';
+    p.grid.forEach(gg=>{
+      const y=Y(gg,p);
+      ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();
+      ctx.fillStyle='#374151';
+      ctx.fillText(Math.abs(gg)<0.0001?'0':String(+gg.toFixed(4)),x0-7,y);
+    });
+    ctx.textAlign='left';ctx.fillStyle='#6b7280';
+    [p.grid[0],p.grid[p.grid.length-1]].forEach(gg=>ctx.fillText(Math.abs(gg)<0.0001?'0':String(+gg.toFixed(4)),x1+7,Y(gg,p)));
+    ctx.textAlign='left';ctx.font='bold 12.5px "Microsoft YaHei"';ctx.fillStyle=p.color;
+    ctx.fillText(p.name,x0+8,p.y0+14);
+    ctx.strokeStyle='#9ca3af';ctx.strokeRect(x0,p.y0,x1-x0,p.y1-p.y0);
+  });
+
+  // X 轴：每 10 min
+  ctx.textAlign='center';ctx.textBaseline='top';ctx.font='10.5px Arial';
+  const t0clock=d.dt[0];
+  for(let m=0;m*60<=tMax+1;m+=10){
+    const s=m*60,x=X(s);
+    ctx.strokeStyle=(m%30===0)?'#cbd5e1':'#eef2f7';
+    ctx.beginPath();ctx.moveTo(x,panels[0].y0);ctx.lineTo(x,panels[2].y1);ctx.stroke();
+    ctx.fillStyle='#374151';ctx.fillText(m+' min',x,panels[2].y1+6);
+    const dd=new Date(t0clock.getTime()+s*1000);
+    ctx.fillStyle='#9ca3af';ctx.fillText(fmtHMS(dd),x,panels[2].y1+20);
+  }
+  ctx.fillStyle='#374151';ctx.font='12px "Microsoft YaHei"';
+  ctx.fillText('运行时间（min） / 当日时钟',(x0+x1)/2,panels[2].y1+34);
+
+  // 曲线
+  const seriesArr={p:P,w:WA,e:E};
+  panels.forEach(panel=>{
+    ctx.beginPath();
+    const arr=seriesArr[panel.key];
+    for(let k=0;k<T.length;k++){ const x=X(T[k]),y=Y(arr[k],panel); k===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
+    ctx.strokeStyle=panel.color;ctx.lineWidth=1.6;ctx.stroke();
+  });
+
+  // 节点标签（贪心泳道防重叠）
+  const marks=NL.filter(x=>N[x.f]).map(x=>[x.f,N[x.f].short]);
+  const laneY=[62,80,98,116], laneEnd=laneY.map(()=>-1e4);
+  ctx.textAlign='center';
+  marks.forEach(mk=>{
+    const s=N[mk[0]].sec, x=X(s);
+    ctx.font='bold 11.5px "Microsoft YaHei"';
+    const wl=ctx.measureText(mk[1]).width;
+    ctx.font='10px Arial';
+    const wt=ctx.measureText(N[mk[0]].time).width;
+    const hw=Math.max(wl,wt)/2+7;
+    let lane=0;
+    while(lane<laneY.length-1 && laneEnd[lane]>x-hw) lane++;
+    laneEnd[lane]=x+hw;
+    const ly=laneY[lane];
+    ctx.save();
+    ctx.strokeStyle='rgba(124,58,237,.35)';ctx.lineWidth=.8;
+    ctx.beginPath();ctx.moveTo(x,ly+22);ctx.lineTo(x,panels[0].y0-5);ctx.stroke();
+    ctx.setLineDash([5,4]);ctx.strokeStyle='#7c3aed';ctx.lineWidth=1.3;
+    ctx.beginPath();ctx.moveTo(x,panels[0].y0-5);ctx.lineTo(x,panels[2].y1);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#7c3aed';ctx.beginPath();ctx.arc(x,panels[0].y0-5,3.2,0,7);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.82)';ctx.fillRect(x-hw+3,ly-12,2*hw-6,27);
+    ctx.font='bold 11.5px "Microsoft YaHei"';ctx.fillStyle='#5b21b6';ctx.fillText(mk[1],x,ly);
+    ctx.font='10px Arial';ctx.fillStyle='#7c3aed';ctx.fillText(N[mk[0]].time,x,ly+14);
+    ctx.restore();
+  });
+
+  // 末端数值
+  ctx.textAlign='left';ctx.font='11px Arial';
+  ctx.fillStyle='#2563eb';ctx.fillText(g.totalWater.toFixed(1)+' L',x1-64,Y(g.totalWater,panels[1])-6);
+  ctx.fillStyle='#059669';ctx.fillText(g.elecEnd.toFixed(3),x1-64,Y(g.elecEnd,panels[2])-6);
+  const peak=Math.max(...P);
+  const px=nd.heatLo>=0?X(nd.sec(nd.heatLo))+4:X(tMax*0.15);
+  ctx.fillStyle='#e11d48';ctx.fillText('峰值 '+peak.toFixed(0)+' W',px,Y(peak*0.96,panels[0])-8);
+}
+
+function renderTable(d, nd){
+  const tb=document.querySelector('#tbl tbody');
+  tb.innerHTML='';
+  buildNodeList(nd).forEach(item=>{
+    const i=item.idx;
+    if(!(i>=0)){ tb.insertAdjacentHTML('beforeend',`<tr><td class="l">${item.name}</td><td colspan="6" style="color:#b91c1c">未识别到该节点</td></tr>`); return; }
+    tb.insertAdjacentHTML('beforeend',
+      `<tr><td class="l">${item.name}</td><td>${i}</td><td>${fmtClock(d.dt[i])}</td><td>${(nd.sec(i)/60).toFixed(2)}</td>`+
+      `<td>${d.pw[i].toFixed(1)}</td><td>${d.W[i].toFixed(3)}</td><td>${d.el[i].toFixed(4)}</td></tr>`);
+  });
+}
+
+function renderVerify(d, nd, g){
+  const checks=[];
+  const row=(ok,text)=>{ checks.push(ok); return `<div>${ok?'<span class="pass">✔ 通过</span>':'<span class="fail">✘ 异常</span>'}　${text}</div>`; };
+  const T=x=>fmtHMS(d.dt[x]);
+  const pan=(a,b)=>T(a)+' → '+T(b);
+  const maxP=(a,b)=>{ let m=-1e9; for(let i=Math.max(a,0);i<=Math.min(b,d.n-1);i++) if(d.pw[i]>m) m=d.pw[i]; return m; };
+  const durMin=(a,b)=>(d.dt[b]-d.dt[a])/60000;
+  let html='';
+
+  /* ===== 一、逐相位时间段判定（整个周期每个阶段的起止与曲线特征核对） ===== */
+  const seq=nd.rinses;
+  // 待机/准备（允许开机自检的零星脉冲）
+  let preHi=0; for(let i=0;i<nd.n1 && i<d.n;i++) if(d.pw[i]>50) preHi++;
+  html+=row(preHi<=8,
+    `待机/准备　${pan(0,nd.n1)}　时长 ${durMin(0,nd.n1).toFixed(2)} min——功率峰值 ${maxP(0,nd.n1-1).toFixed(1)} W（&gt;50 W 样本仅 ${preHi} 个${preHi<=8?'，属开机自检类零星脉冲 ✓':'，需复核是否遗漏相位'}）；主洗进水自 ${T(nd.n1)} 开始`);
+  // 主洗
+  const mainEnd = seq.length?nd.rinses[0]:nd.spinOn;
+  const mRatio = g.mainDur/g.totalSec;
+  let mOk = mRatio>=0.4;
+  let extraTxt='';
+  if(d.wType==='cumulative'){
+    const pf=profile2(d.W);
+    // 主进水段：自 n1 附近首个脉冲起，间隔 ≤600 s 的相邻脉冲并入主进水；其后才是保温补水量
+    let fillEnd=-1;
+    for(const b of pf.bursts){
+      if(b.e>=nd.r1) break;
+      if(fillEnd<0){ if(b.s>=nd.n1 && b.s<=nd.n1+120) fillEnd=b.e; }
+      else if(b.s-fillEnd<=600) fillEnd=b.e;
+    }
+    if(fillEnd<0) fillEnd=nd.n1;
+    let ex=0; for(let i=fillEnd+1;i<nd.r1;i++){ const dv=d.W[i]-d.W[i-1]; if(dv>0.001) ex+=dv; }
+    extraTxt=ex>=0.3?`；期间另有小量补水/回水合计 ${ex.toFixed(3)} L（不足主进水一半，不算漂洗）`:'；期间除主进水外无其它进水';
+    if(ex >= 0.5*g.mainWater) mOk=false;
+  }
+  html+=row(mOk,
+    `主洗　${pan(nd.n1,mainEnd)}　时长 ${(g.mainDur/60).toFixed(2)} min（占周期 ${(mRatio*100).toFixed(0)}%${mRatio>=0.4?'，主洗为周期主体 ✓':'，占比偏低需复核'}）——主进水 ${g.mainWater.toFixed(3)} L${extraTxt}`);
+  // 加热
+  if(nd.heatHi>=0){
+    if(nd.heatCycle){
+      html+=row(true,
+        `主洗加热（低功率加热器·温控通断循环）　${pan(nd.heatLo,nd.heatHi)}　通断段 ${nd.heatSegLen} 个、合计通电 ${nd.heatOn} s（${(nd.heatOn/60).toFixed(2)} min）——最长段间隔 ${nd.heatMaxGap} s（温控循环特征 ✓）`);
+    } else {
+      html+=row(nd.heatMaxGap<=10,
+        `主洗加热　${pan(nd.heatLo,nd.heatHi)}　时长 ${((nd.heatHi-nd.heatLo+1)/60).toFixed(2)} min——高功率样本 ${nd.heatOn} s，最长中断 ${nd.heatMaxGap} s（${nd.heatMaxGap<=10?'连续高功率 ✓':'中断偏多需复核'}）`);
+    }
+  } else {
+    html+=row(true,`主洗加热　未检测到加热段，该机程序无加热（P 峰值 ${maxP(nd.n1,mainEnd).toFixed(0)} W）`);
+  }
+  // 各次漂洗
+  const pfR=profile2(d.W);
+  for(let k=0;k<seq.length;k++){
+    const a=seq[k], b=(k+1<seq.length)?seq[k+1]:nd.spinOn;
+    const f=nd.fills[k];
+    const fspan=(f&&f.e>=a)?(f.e-a):0;
+    // 相位内除自身进水外的其它进水脉冲——相位超长且期内另有进水才可疑；
+    // 纯浸泡/静置程序步（无额外进水）属正常（如 LG-AU 第 1 次漂洗后 ~69 min 浸泡）
+    let inner=0; for(const bb of pfR.bursts){ if(bb.v>=0.3 && bb.s>a+1 && bb.s<=b) inner++; }
+    const dd=durMin(a,b);
+    const dOk = dd>=0.5 && (dd<=30 || inner===0) && fspan<=900;
+    html+=row(dOk,
+      `漂洗 ${k+1}　${pan(a,b)}　时长 ${dd.toFixed(2)} min——进水 ${g.rinseW[k].toFixed(3)} L（进水历时 ${fspan} s${fspan<=900?'，集中于相位前段 ✓':'，历时过长需复核'}）${dd>30?(inner===0?'（相位偏长但期内无额外进水，属浸泡/静置程序步 ✓）':'（相位偏长且期内另有进水，需复核）'):''}`);
+  }
+  // 最终脱水
+  const spMax = maxP(nd.spinOn,nd.opEnd);
+  const spOk = spMax>=50;
+  let spinTxt=`功率峰值 ${spMax.toFixed(0)} W（${spOk?'电机运转特征明显 ✓':'峰值过低需复核'}）`;
+  if(d.wType!=='level'){ const dw=Math.abs(d.W[nd.opEnd]-d.W[nd.spinOn]); spinTxt+=`；水量变化 ${dw.toFixed(3)} L（${dw<1?'脱水期无进水 ✓':'脱水期有进水需复核'}）`;
+    if(dw>=1) spOk=false; }
+  html+=row(spOk,`最终脱水　${pan(nd.spinOn,nd.opEnd)}　时长 ${(g.d3/60).toFixed(2)} min——${spinTxt}`);
+  // 收尾
+  let tailHi=0; if(nd.opEnd+10<d.n){ for(let i=nd.opEnd+10;i<d.n;i++){ if(d.pw[i]>300) tailHi++; } }
+  const tailMin=(d.dt[d.n-1]-d.dt[nd.opEnd])/60000;
+  html+=row(tailHi<=4,
+    `运行结束收尾　${pan(nd.opEnd,d.n-1)}（后续 ${tailMin.toFixed(1)} min 记录，不计入周期）——待机功率 ${maxP(nd.opEnd+10,d.n-1).toFixed(1)} W${tailHi<=4?'，无遗漏的大功率相位 ✓':`，${tailHi} 个 >300 W 样本需复核`}`);
+
+  /* ===== 二、闭合校验 ===== */
+  const tSum=g.segDur.reduce((a,b)=>a+b,0);
+  const tDiff=tSum-g.totalSec;
+  const wSum=g.mainWater+g.rinseW.reduce((a,b)=>a+b,0);
+  const wDiff=wSum-g.totalWater;
+  const wTol=d.wType==='level'?0.5:0.05;
+  const eSum=g.eMain+g.eRinseAll+g.eSpin;
+  const eDiff=eSum-g.elecEnd;
+  const segTxt=g.segDur.map(x=>(x/60).toFixed(2)).join(' + ');
+  const wParts=[g.mainWater.toFixed(3)].concat(g.rinseW.map(x=>x.toFixed(3))).join(' + ');
+  html+=row(Math.abs(tDiff)<=2,
+    `时长闭合：${segTxt} = ${(tSum/60).toFixed(2)} min（待机+主洗+各漂洗+脱水收尾），总时长 ${(g.totalSec/60).toFixed(2)} min（差 ${tDiff.toFixed(1)} s）`);
+  html+=row(Math.abs(wDiff)<wTol,
+    `水量闭合：${wParts} = ${wSum.toFixed(3)} L，总量 ${g.totalWater.toFixed(3)} L（差 ${wDiff.toFixed(3)} L）`);
+  html+=row(Math.abs(eDiff)<0.01,
+    `电量闭合：${g.eMain.toFixed(4)}（主洗）+ ${g.eRinseAll.toFixed(4)}（漂洗）+ ${g.eSpin.toFixed(4)}（脱水收尾）= ${eSum.toFixed(4)} kWh，即总电量；终点表值 ${g.elecEnd.toFixed(4)} kWh（起点基线 ${d.el[0].toFixed(4)}，差 ${eDiff.toFixed(4)}）`);
+  if(g.rinseW.length>1){
+    const rmx=Math.max(...g.rinseW), rmn=Math.min(...g.rinseW);
+    html+=row(rmx<=rmn*2,
+      `漂洗均匀性：各次漂洗水量 ${g.rinseW.map(x=>x.toFixed(3)).join(' / ')} L（最大/最小比 ${(rmx/rmn).toFixed(2)}，应在 2 以内——各次漂洗差别不应过大）`);
+  }
+  const passN=checks.filter(Boolean).length;
+  html=`<div style="font-weight:bold;margin-bottom:6px"><span class="${checks.length&&passN===checks.length?'pass':'fail'}">自审查（第 ${(typeof runCount!=='undefined'?runCount:1)} 次分析）：${passN} / ${checks.length} 项通过</span>${checks.length&&passN===checks.length?'　✔':'　请核对下方异常项，可点击「重新分析（自审查）」复核'}</div>`+html;
+  html+=`<div style="margin-top:6px;color:#6b7280">图表已按本次自审查确定的相位节点同步重绘（上方曲线图中各阶段底纹区间与节点标注均已更新）。运行结束后记录中另有 ${nd.antiCrease} s 功率&gt;5 W（防皱抖散，未计入周期）。</div>`;
+  document.getElementById('verify').innerHTML=html;
+
+  const note=document.getElementById('chartNote');
+  note.innerHTML='注：① 用水量列自动选择——<b>'+g.wName+'</b>'+(g.wType==='level'?'（液位型，相位水量按正增量求和）':'（累计型，相位水量按端点差值）')+
+    (g.wWarn?'；'+g.wWarn:'')+'。'+
+    '② 相位依据<b>功率曲线 + 有效累计水量</b>联合判定；主洗结束以"第1次漂洗进水开始"为界。'+
+    '③ 运行结束后的零星点动按防皱抖散处理，不计入周期。';
+}
+
+/* 水量列脉冲谱（供自审查使用，与 detectNodes 内 profile 同规则） */
+function profile2(arr){
+  let pos=0, neg=0;
+  const bursts=[];
+  let inB=false, bs=0, last=0, bvol=0;
+  for(let i=1;i<arr.length;i++){
+    const dv=arr[i]-arr[i-1];
+    if(dv>0.001) pos+=dv;
+    if(dv<-0.001) neg-=dv;
+    if(dv>0.01){
+      if(!inB){ inB=true; bs=i; bvol=0; }
+      bvol+=dv; last=i;
+    } else if(inB && (i-last)>60){
+      if(bvol>0.1) bursts.push({s:bs,e:last,v:bvol});
+      inB=false;
+    }
+  }
+  if(inB && bvol>0.1) bursts.push({s:bs,e:last,v:bvol});
+  return {pos,neg,bursts};
+}
+
+/* ============================================================
+ * 5. 主流程
+ * ============================================================ */
+
+let lastBuf=null, lastInfo=null, runCount=0;
+
+function showAlert(id,msg){ const el=document.getElementById(id); if(msg){el.textContent=msg;el.style.display='block';} else el.style.display='none'; }
+
+function detectFormat(buf){
+  const b = new Uint8Array(buf, 0, Math.min(8, buf.byteLength));
+  if(b.length>=4 && b[0]===0xD0 && b[1]===0xCF && b[2]===0x11 && b[3]===0xE0) return 'xls';   // OLE2 复合格式
+  if(b.length>=4 && b[0]===0x50 && b[1]===0x4B && b[2]===0x03 && b[3]===0x04) return 'xlsx';  // ZIP
+  return 'text';
+}
+
+function analyze(buf, info){
+  lastBuf=buf; lastInfo=info;
+  runCount++;
+  showAlert('alertErr',null); showAlert('alertWarn',null); showAlert('alertOk',null);
+  let parsed;
+  try {
+    const fmt = detectFormat(buf);
+    if(fmt==='xls' || fmt==='xlsx'){
+      const ex = parseExcelRows(buf);
+      parsed = parseRows(ex.rows, 'excel');
+      parsed.sheetName = ex.sheetName;
+      parsed.allSheets = ex.allSheets;
+      parsed.fmt = fmt;
+    } else {
+      const mode = document.getElementById('enc').value;
+      let text, usedEnc;
+      if(mode==='gbk'){ text=new TextDecoder('gbk').decode(buf); usedEnc='GBK'; }
+      else if(mode==='utf-8'){ text=new TextDecoder('utf-8').decode(buf); usedEnc='UTF-8'; }
+      else {
+        const u8=new TextDecoder('utf-8').decode(buf);
+        if((u8.match(/\uFFFD/g)||[]).length > 5){ text=new TextDecoder('gbk').decode(buf); usedEnc='GBK（自动）'; }
+        else { text=u8; usedEnc='UTF-8（自动）'; }
+      }
+      const tr = parseTextRows(text);
+      parsed = parseRows(tr.rows, 'text');
+      parsed.delim = tr.delim;
+      parsed.usedEnc = usedEnc;
+      parsed.fmt = 'text';
+    }
+  }
+  catch(e){ showAlert('alertErr','解析失败：'+e.message); return; }
+
+  if(parsed.n < 100){
+    showAlert('alertErr','有效数据行过少（仅 '+parsed.n+' 行）。请确认文件为 Excel 工作簿或制表符/逗号分隔文本，且首列为时间戳、包含功率/用水量/电量数据列。');
+    return;
+  }
+  // 必需字段存在性校验
+  const need = ['power','water1','elec'];
+  const missing = need.filter(k=>!parsed.found[k]);
+  if(missing.length){
+    const map={power:'功率(W)',water1:'累计用水量(L)',elec:'累计电量(kWh)'};
+    showAlert('alertErr','缺少必需字段：'+missing.map(m=>map[m]).join('、')+
+      '。未在表头识别到对应列名，已尝试按默认列位置(功率第29列/用水量第21列/电量第30列)解析。请确认文件格式，或告知正确的列位置。');
+  }
+  if(parsed.f2warn) {/* reserved */}
+
+  let nd;
+  try { nd = detectNodes(parsed); }
+  catch(e){ showAlert('alertErr','节点识别异常：'+e.message); return; }
+
+  const bad = buildNodeList(nd).filter(x=>!(x.idx>=0)).map(x=>x.name);
+  if(bad.length){
+    showAlert('alertWarn','以下相位节点未能识别：'+bad.join('、')+'。结果可能不完整，请检查该数据是否为完整洗涤周期，或功率/水量列是否映射正确。');
+  }
+  if(nd.opEnd<0){ showAlert('alertErr','未能识别运行结束节点，无法输出完整结果。'); return; }
+
+  const g=calcParams(parsed,nd);
+  document.getElementById('results').classList.remove('hidden');
+  document.getElementById('reanalyze').disabled=false;
+  renderKpis(g,parsed,nd);
+  renderChart(parsed,nd,g);
+  renderTable(parsed,nd);
+  renderVerify(parsed,nd,g);
+
+  const warnBits=[];
+  if(parsed.allSheets && parsed.allSheets.length>1)
+    warnBits.push('工作簿含多个工作表，已自动选择数据最多的「'+parsed.sheetName+'」');
+  if(!parsed.found.power||!parsed.found.water1||!parsed.found.elec) warnBits.push('表头列名未完全匹配，使用了默认列位置');
+  if(g.wWarn) warnBits.push(g.wWarn+'，水表类型：'+(g.wType==='level'?'液位型':'累计型'));
+  if(nd.antiCrease>0) warnBits.push('检测到周期后防皱点动 '+nd.antiCrease+' s（已排除）');
+  showAlert('alertOk','第 '+runCount+' 次分析完成并已自审查：'+parsed.n+' 个有效样本，周期 '+(g.totalSec/60).toFixed(2)+' min，漂洗 '+g.rinseW.length+' 次，总水 '+g.totalWater.toFixed(3)+' L，总电 '+g.elecTotal.toFixed(4)+' kWh。'+
+    (warnBits.length?'　提示：'+warnBits.join('；')+'。':''));
+}
+
+async function handleFile(file){
+  const buf=await file.arrayBuffer();
+  lastBuf=buf;
+  const fmt=detectFormat(buf);
+  const fmtText = fmt==='xls' ? 'Excel 97-2003 工作簿（.xls）'
+               : fmt==='xlsx' ? 'Excel 工作簿（.xlsx）'
+               : '文本表格（'+(document.getElementById('enc').value==='gbk'?'GBK':document.getElementById('enc').value==='utf-8'?'UTF-8':'编码自动识别')+'）';
+  const info={name:file.name, size:(file.size/1024).toFixed(1)+' KB', fmt:fmtText};
+  lastInfo=info;
+  const fi=document.getElementById('fileinfo');
+  fi.style.display='block';
+  fi.innerHTML='已选择文件：<b>'+info.name+'</b>（'+info.size+'）　格式：<b>'+info.fmt+'</b>';
+  document.getElementById('reanalyze').disabled=false;
+  analyze(buf,info);
+  saveLastFile(file.name, file.type||'text/plain', buf);
+}
+
+/* 上次上传附件持久化：点击「重新分析」即刷新网页，刷新后自动恢复附件重新加载（附件不清空） */
+const IDB_NAME='washer-analyzer', IDB_STORE='files', IDB_KEY='last';
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    if(!window.indexedDB){ rej(new Error('no-idb')); return; }
+    try{
+      const rq=indexedDB.open(IDB_NAME,1);
+      rq.onupgradeneeded=()=>{ rq.result.createObjectStore(IDB_STORE); };
+      rq.onsuccess=()=>res(rq.result);
+      rq.onerror=()=>rej(rq.error);
+    }catch(e){ rej(e); }
+  });
+}
+function saveLastFile(name,type,buf){
+  idbOpen().then(db=>{
+    try{
+      const tx=db.transaction(IDB_STORE,'readwrite');
+      tx.objectStore(IDB_STORE).put({name,type,buf},IDB_KEY);
+      tx.oncomplete=()=>db.close();
+      tx.onerror=()=>{ db.close(); saveLastFileLS(name,type,buf); };
+    }catch(e){ db.close(); saveLastFileLS(name,type,buf); }
+  }).catch(()=>saveLastFileLS(name,type,buf));
+}
+function saveLastFileLS(name,type,buf){
+  try{
+    const bytes=new Uint8Array(buf);
+    let bin='';
+    for(let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
+    localStorage.setItem('washer_last',JSON.stringify({name,type,b64:btoa(bin)}));
+  }catch(e){/* 超配额或不可用：放弃持久化，按钮退化为不可用 */}
+}
+function restoreLastFile(){
+  if(window.indexedDB){
+    idbOpen().then(db=>{
+      const tx=db.transaction(IDB_STORE,'readonly');
+      const rq=tx.objectStore(IDB_STORE).get(IDB_KEY);
+      rq.onsuccess=()=>{ const v=rq.result; if(v && v.buf) handleFile(new File([v.buf],v.name||'数据.xls',{type:v.type||'text/plain'})); };
+      tx.oncomplete=()=>db.close();
+    }).catch(()=>restoreLastFileLS());
+  } else restoreLastFileLS();
+}
+function restoreLastFileLS(){
+  try{
+    const s=localStorage.getItem('washer_last');
+    if(!s) return;
+    const o=JSON.parse(s);
+    if(o && o.b64){
+      const bin=atob(o.b64);
+      const bytes=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+      handleFile(new File([bytes],o.name||'数据.xls',{type:o.type||'text/plain'}));
+    }
+  }catch(e){}
+}
+
+const drop=document.getElementById('drop'), fileInput=document.getElementById('file');
+drop.addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hover');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hover');}));
+drop.addEventListener('drop',e=>{ if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+document.getElementById('enc').addEventListener('change',()=>{ if(lastBuf && detectFormat(lastBuf)==='text') analyze(lastBuf,lastInfo); });
+document.getElementById('reanalyze').addEventListener('click',()=>{ if(lastBuf){ location.reload(); } });
+// 页面加载时自动恢复上次上传的附件并重新分析
+restoreLastFile();
+</script>
+</body>
+</html>
