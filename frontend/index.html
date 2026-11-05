@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>洗衣机运行周期数据分析</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:18px 16px 40px;background:#f4f6f9;font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;color:#1f2937}
+  .wrap{max-width:1400px;margin:0 auto}
+  h1{font-size:21px;margin:2px 0 6px}
+  .sub{font-size:12.5px;color:#6b7280;margin-bottom:12px}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:14px}
+  #drop{border:2px dashed #b7c2d4;border-radius:10px;padding:26px 20px;text-align:center;color:#5b677a;cursor:pointer;background:#fafbfd}
+  #drop.hover{border-color:#2563eb;background:#eff6ff;color:#1d4ed8}
+  .opts{margin-top:10px;display:flex;gap:18px;align-items:center;font-size:13px;color:#4b5563}
+  select{font-size:13px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff}
+  #status{margin-top:10px;font-size:13px;color:#374151;min-height:18px}
+  #status.err{color:#991b1b}
+  .hidden{display:none!important}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+  .kpi{border:1px solid #e5e7eb;border-radius:9px;padding:10px 12px;background:#fcfdff}
+  .kpi .k{font-size:12px;color:#6b7280;margin-bottom:4px}
+  .kpi .v{font-size:19px;font-weight:bold;color:#111827}
+  .kpi .u{font-size:11.5px;color:#9ca3af;font-weight:normal;margin-left:3px}
+  .kpi .d{font-size:12px;color:#4b5563;margin-top:2px;line-height:1.5}
+  canvas{width:100%;display:block}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:8px}
+  th,td{border:1px solid #dbe1e8;padding:5px 8px;text-align:center;white-space:nowrap}
+  th{background:#eef2f7}
+  td.l{text-align:left;white-space:normal}
+  .warn{margin-top:8px;font-size:12.5px;color:#92400e}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>洗衣机运行周期数据分析</h1>
+  <div class="sub">上传数据文件，自动识别相位节点、计算能耗水耗并绘制曲线（前后端分离版）。</div>
+
+  <div class="card">
+    <div id="drop">点击选择文件，或将文件拖拽到此处</div>
+    <input type="file" id="file" accept=".xls,.xlsx,.xlsm,.tsv,.csv,.txt" style="display:none">
+    <div class="opts">
+      <label>测试类型：
+        <select id="testType">
+          <option value="efficiency" selected>能效</option>
+          <option value="program-check" disabled>程序检查（开发中）</option>
+        </select>
+      </label>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="card">
+      <h2 style="font-size:15px;margin:0 0 10px">核心参数</h2>
+      <div id="kpis" class="kpis"></div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:15px;margin:0 0 6px">功率曲线</h2>
+      <canvas id="cv" width="1320" height="460"></canvas>
+    </div>
+    <div class="card">
+      <h2 style="font-size:15px;margin:0 0 6px">相位节点</h2>
+      <table id="tbl">
+        <thead><tr><th>相位节点</th><th>序号 (s)</th><th>时钟时间</th><th>功率 (W)</th><th>累计水量 (L)</th><th>累计电量 (kWh)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file');
+const testType = document.getElementById('testType');
+const statusEl = document.getElementById('status');
+
+drop.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hover'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hover'); }));
+drop.addEventListener('drop', e => { if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+async function handleFile(file){
+  statusEl.textContent = '正在分析：'+file.name+' ...';
+  statusEl.className = '';
+  try{
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    for(let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+    const b64 = btoa(bin);
+    const resp = await fetch('/analyze', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ filename: file.name, content: b64, testType: testType.value })
+    });
+    const data = await resp.json();
+    if(data.error){ statusEl.textContent = '分析失败：'+data.error; statusEl.className = 'err'; return; }
+    render(data, file.name);
+    statusEl.textContent = '分析完成：'+data.n+' 个样本，'+data.fmt+'（'+(data.usedEnc||'')+'）';
+  }catch(e){
+    statusEl.textContent = '请求失败：'+e.message+'（请确认后端已启动 node backend/server.mjs）';
+    statusEl.className = 'err';
+  }
+}
+
+function render(data, filename){
+  const g = data.params;
+  const mins = g.totalSec/60;
+  const hh = Math.floor(mins/60), mm = (mins-hh*60).toFixed(2);
+  const peak = Math.max(...data.series.p);
+  const rinseCard = g.rinseW.length
+    ? {k:'漂洗次数 / 各次水量·时长·用电', v:g.rinseW.length, u:'次', d:g.rinseW.map((x,i)=>'第'+(i+1)+'次 '+x.toFixed(2)+' L / '+((g.rinseDur[i]||0)/60).toFixed(1)+' min / '+(g.rinseElec[i]||0).toFixed(4)+' kWh').join('<br>')}
+    : {k:'漂洗', v:'—', u:'', d:'未识别到漂洗进水'};
+  const heatCard = g.heatMin===null
+    ? {k:'加热时长', v:'—', u:'', d:'未检测到加热段'}
+    : {k:'加热时长', v:g.heatMin.toFixed(2), u:'min', d:'峰值 '+peak.toFixed(0)+' W'};
+  const items = [
+    {k:'总运行时间', v:(g.totalSec/60).toFixed(2), u:'min', d:Math.round(g.totalSec)+' s（'+hh+' h '+mm+' min）'},
+    {k:'总电量', v:g.elecTotal.toFixed(4), u:'kWh', d:'洗涤用电 '+g.eMain.toFixed(4)+' kWh'},
+    {k:'总用水量', v:g.totalWater.toFixed(3), u:'L', d:'有效水表：'+data.wname},
+    {k:'主洗时长 / 用水量', v:(g.mainDur/60).toFixed(2), u:'min', d:g.mainWater.toFixed(3)+' L', dBig:true},
+    rinseCard,
+    heatCard
+  ];
+  document.getElementById('kpis').innerHTML = items.map(it=>
+    `<div class="kpi"><div class="k">${it.k}</div><div class="v">${it.v}<span class="u">${it.u}</span></div><div class="${it.dBig?'v':'d'}"${it.dBig?' style="margin-top:2px"':''}>${it.d}</div></div>`
+  ).join('');
+
+  drawChart(data);
+  renderTable(data);
+  document.getElementById('results').classList.remove('hidden');
+}
+
+function drawChart(data){
+  const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+  const M = {l:52, r:52, t:30, b:42};
+  const x0 = M.l, x1 = W-M.r, y0 = M.t, y1 = H-M.b;
+  const t = data.series.t, p = data.series.p, w = data.series.w;
+  const tMax = t[t.length-1] || 1;
+  const pMax = Math.max(...p, 1) * 1.1;
+  const wMax = Math.max(...w, 1) * 1.1;
+  const X = s => x0 + (s/tMax)*(x1-x0);
+  const Yp = v => y1 - (v/pMax)*(y1-y0);
+  const Yw = v => y1 - (v/wMax)*(y1-y0);
+
+  // 左轴（功率）网格
+  ctx.strokeStyle = '#eef2f7'; ctx.lineWidth = 1;
+  ctx.font = '11px Arial';
+  for(let v=0; v<=pMax; v+=Math.ceil(pMax/6/100)*100){
+    const y = Yp(v);
+    ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x1,y); ctx.stroke();
+    ctx.fillStyle = '#374151'; ctx.textAlign = 'right'; ctx.fillText(Math.round(v), x0-6, y+4);
+  }
+  // 右轴（水量）刻度
+  ctx.textAlign = 'left';
+  const wStep = Math.ceil(wMax/6/10)*10;
+  for(let v=0; v<=wMax; v+=wStep){
+    const y = Yw(v);
+    ctx.fillStyle = '#2563eb'; ctx.fillText(v.toFixed(0), x1+6, y+4);
+  }
+  // x 轴刻度
+  ctx.textAlign = 'center';
+  for(let m=0; m*60<=tMax; m+=10){
+    const x = X(m*60);
+    ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y1); ctx.strokeStyle='#f3f4f6'; ctx.stroke();
+    ctx.fillStyle = '#9ca3af'; ctx.fillText(m+'min', x, y1+16);
+  }
+  // 功率曲线（红，左轴）
+  ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 1.6; ctx.beginPath();
+  for(let k=0;k<t.length;k++){ const x=X(t[k]), y=Yp(p[k]); k===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
+  ctx.stroke();
+  // 水量曲线（蓝，右轴）
+  ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.6; ctx.beginPath();
+  for(let k=0;k<t.length;k++){ const x=X(t[k]), y=Yw(w[k]); k===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
+  ctx.stroke();
+  // 图例
+  ctx.font = '12px "Microsoft YaHei"'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#e11d48'; ctx.fillText('功率 (W) — 左轴', x0, y0-12);
+  ctx.fillStyle = '#2563eb'; ctx.fillText('用水量 (L) — 右轴', x0+150, y0-12);
+  // 节点竖线
+  ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+  ctx.font = 'bold 11px "Microsoft YaHei"'; ctx.textAlign = 'left';
+  data.nodes.forEach(nd => {
+    if(nd.sec==null || nd.sec < 0) return;
+    const x = X(nd.sec);
+    ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y1); ctx.stroke();
+    ctx.fillStyle = '#5b21b6'; ctx.fillText(nd.name.replace(/（.*?）/g,''), x+4, y0+12);
+  });
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#374151'; ctx.font = '12px "Microsoft YaHei"'; ctx.textAlign = 'center';
+  ctx.fillText('运行时间（min）', (x0+x1)/2, H-6);
+}
+
+function renderTable(data){
+  const tb = document.querySelector('#tbl tbody');
+  tb.innerHTML = '';
+  data.nodes.forEach(nd => {
+    const row = nd.idx>=0
+      ? `<tr><td class="l">${nd.name}</td><td>${nd.idx}</td><td>${nd.time}</td><td>${nd.power.toFixed(1)}</td><td>${nd.water.toFixed(3)}</td><td>${nd.elec.toFixed(4)}</td></tr>`
+      : `<tr><td class="l">${nd.name}</td><td colspan="5" style="color:#b91c1c">未识别到该节点</td></tr>`;
+    tb.insertAdjacentHTML('beforeend', row);
+  });
+}
+</script>
+</body>
+</html>
