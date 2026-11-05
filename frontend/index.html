@@ -43,8 +43,9 @@
     <div class="opts">
       <label>测试类型：
         <select id="testType">
-          <option value="efficiency" selected>能效</option>
-          <option value="program-check" disabled>程序检查（开发中）</option>
+          <option value="" selected>请选择</option>
+          <option value="efficiency">能效</option>
+          <option value="program-check">程序检查</option>
         </select>
       </label>
     </div>
@@ -83,6 +84,11 @@ fileInput.addEventListener('change', e => { if(e.target.files[0]) handleFile(e.t
 drop.addEventListener('drop', e => { if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
 
 async function handleFile(file){
+  if(!testType.value){
+    statusEl.textContent = '请先选择测试类型（能效 / 程序检查）';
+    statusEl.className = 'err';
+    return;
+  }
   statusEl.textContent = '正在分析：'+file.name+' ...';
   statusEl.className = '';
   try{
@@ -98,18 +104,19 @@ async function handleFile(file){
     });
     const data = await resp.json();
     if(data.error){ statusEl.textContent = '分析失败：'+data.error; statusEl.className = 'err'; return; }
-    render(data, file.name);
-    statusEl.textContent = '分析完成：'+data.n+' 个样本，'+data.fmt+'（'+(data.usedEnc||'')+'）';
+    render(data, file.name, testType.value);
+    statusEl.textContent = '分析完成：'+data.n+' 个样本';
   }catch(e){
     statusEl.textContent = '请求失败：'+e.message+'（请确认后端已启动 node backend/server.mjs）';
     statusEl.className = 'err';
   }
 }
 
-function render(data, filename){
+function render(data, filename, type){
+  if(type === 'program-check'){ renderProgramCheck(data, filename); return; }
+  document.querySelector('#tbl thead').innerHTML = '<tr><th>相位节点</th><th>序号 (s)</th><th>时钟时间</th><th>功率 (W)</th><th>累计水量 (L)</th><th>累计电量 (kWh)</th></tr>';
   const g = data.params;
-  const mins = g.totalSec/60;
-  const hh = Math.floor(mins/60), mm = (mins-hh*60).toFixed(2);
+  const hh = Math.floor(g.totalSec/3600), mm = Math.floor((g.totalSec%3600)/60);
   const peak = Math.max(...data.series.p);
   const rinseCard = g.rinseW.length
     ? {k:'漂洗次数 / 各次水量·时长·用电', v:g.rinseW.length, u:'次', d:g.rinseW.map((x,i)=>'第'+(i+1)+'次 '+x.toFixed(2)+' L / '+((g.rinseDur[i]||0)/60).toFixed(1)+' min / '+(g.rinseElec[i]||0).toFixed(4)+' kWh').join('<br>')}
@@ -118,7 +125,7 @@ function render(data, filename){
     ? {k:'加热时长', v:'—', u:'', d:'未检测到加热段'}
     : {k:'加热时长', v:g.heatMin.toFixed(2), u:'min', d:'峰值 '+peak.toFixed(0)+' W'};
   const items = [
-    {k:'总运行时间', v:(g.totalSec/60).toFixed(2), u:'min', d:Math.round(g.totalSec)+' s（'+hh+' h '+mm+' min）'},
+    {k:'总运行时间', v:hh+':'+String(mm).padStart(2,'0'), u:'', d:hh+' 小时 '+mm+' 分钟'},
     {k:'总电量', v:g.elecTotal.toFixed(4), u:'kWh', d:'洗涤用电 '+g.eMain.toFixed(4)+' kWh'},
     {k:'总用水量', v:g.totalWater.toFixed(3), u:'L', d:'有效水表：'+data.wname},
     {k:'主洗时长 / 用水量', v:(g.mainDur/60).toFixed(2), u:'min', d:g.mainWater.toFixed(3)+' L', dBig:true},
@@ -202,6 +209,88 @@ function renderTable(data){
   data.nodes.forEach(nd => {
     const row = nd.idx>=0
       ? `<tr><td class="l">${nd.name}</td><td>${nd.idx}</td><td>${nd.time}</td><td>${nd.power.toFixed(1)}</td><td>${nd.water.toFixed(3)}</td><td>${nd.elec.toFixed(4)}</td></tr>`
+      : `<tr><td class="l">${nd.name}</td><td colspan="5" style="color:#b91c1c">未识别到该节点</td></tr>`;
+    tb.insertAdjacentHTML('beforeend', row);
+  });
+}
+
+function renderProgramCheck(data, filename){
+  document.querySelector('#tbl thead').innerHTML = '<tr><th>相位节点</th><th>序号 (s)</th><th>时钟时间</th><th>功率 (W)</th><th>排水泵电流 (A)</th><th>转速 (rpm)</th></tr>';
+  const g = data.params;
+  const hh = Math.floor(g.totalTime/3600), mm = Math.floor((g.totalTime%3600)/60);
+  const items = [
+    {k:'洗涤时间', v:(g.washTime/60).toFixed(1), u:'min', d:'主洗开始到排水（含加热）'},
+    {k:'温度', v:g.temp!==null?g.temp.toFixed(1):'-', u:g.temp!==null?'℃':'', d:'加热结束时刻的可用温度'},
+    {k:'漂洗次数', v:g.rinseCount, u:'次', d:'总漂洗时间 '+(g.totalRinseTime/60).toFixed(1)+' min'},
+    {k:'脱水时间', v:(g.spinTime/60).toFixed(1), u:'min', d:'最高转速 '+g.maxRpm+' rpm'},
+    {k:'总运行时间', v:hh+':'+String(mm).padStart(2,'0'), u:'', d:hh+' 小时 '+mm+' 分钟'},
+  ];
+  document.getElementById('kpis').innerHTML = '<div style="grid-column:1/-1;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;font-size:12.5px;color:#92400e">提醒：由于可能存在的算法兼容问题，请查看图像后确认无误再抄录。</div>' + items.map(it=>
+    `<div class="kpi"><div class="k">${it.k}</div><div class="v">${it.v}<span class="u">${it.u}</span></div><div class="d">${it.d}</div></div>`
+  ).join('');
+  drawProgramCheckChart(data);
+  renderProgramCheckTable(data);
+  document.getElementById('results').classList.remove('hidden');
+}
+
+function drawProgramCheckChart(data){
+  const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+  const M = {l:64, r:60, t:26, b:30};
+  const ph = (H - M.t - M.b - 3*8) / 4;
+  const t = data.series.t;
+  const tMax = t[t.length-1] || 1;
+  const X = s => M.l + (s/tMax)*(W-M.l-M.r);
+  const panels = [
+    {name:'功率 (W)', color:'#e11d48', arr:data.series.power},
+    {name:'排水泵电流 (A)', color:'#2563eb', arr:data.series.pump},
+    {name:'主洗阀电流 (A)', color:'#d97706', arr:data.series.valve},
+    {name:'转速 (rpm)', color:'#059669', arr:data.series.rpm},
+  ];
+  panels.forEach((p, k) => {
+    const y0 = M.t + k*(ph+8), y1 = y0 + ph;
+    const mx = (Math.max(...p.arr, 0) * 1.1) || 1;
+    const prec = mx <= 1 ? 100 : mx <= 10 ? 10 : 1;
+    const Y = v => y1 - (v/mx)*(y1-y0);
+    ctx.strokeStyle = '#eef2f7'; ctx.lineWidth = 1; ctx.font = '10px Arial';
+    for(let v=0; v<=mx; v+=mx/4){
+      const y = Y(v);
+      ctx.beginPath(); ctx.moveTo(M.l,y); ctx.lineTo(W-M.r,y); ctx.stroke();
+      ctx.fillStyle = '#6b7280'; ctx.textAlign = 'right'; ctx.fillText(Math.round(v*prec)/prec, M.l-5, y+3);
+    }
+    ctx.fillStyle = p.color; ctx.font = 'bold 11px "Microsoft YaHei"'; ctx.textAlign = 'left';
+    ctx.fillText(p.name, M.l, y0+11);
+    ctx.strokeStyle = p.color; ctx.lineWidth = 1.4; ctx.beginPath();
+    for(let k2=0;k2<t.length;k2++){ const x=X(t[k2]), y=Y(p.arr[k2]); k2===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
+    ctx.stroke();
+    ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+    data.nodes.forEach(nd => {
+      if(nd.sec==null || nd.sec<0) return;
+      const x = X(nd.sec);
+      ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y1); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+  });
+  ctx.textAlign = 'center'; ctx.font = '10px Arial';
+  for(let m=0; m*60<=tMax; m+=10){
+    const x = X(m*60);
+    ctx.fillStyle = '#9ca3af'; ctx.fillText(m+'min', x, H-8);
+  }
+  ctx.font = 'bold 10px "Microsoft YaHei"'; ctx.textAlign = 'left';
+  data.nodes.forEach(nd => {
+    if(nd.sec==null || nd.sec<0) return;
+    const x = X(nd.sec);
+    ctx.fillStyle = '#5b21b6'; ctx.fillText(nd.name.replace(/（.*?）/g,''), x+3, 14);
+  });
+}
+
+function renderProgramCheckTable(data){
+  const tb = document.querySelector('#tbl tbody');
+  tb.innerHTML = '';
+  data.nodes.forEach(nd => {
+    const row = nd.idx>=0
+      ? `<tr><td class="l">${nd.name}</td><td>${nd.idx}</td><td>${nd.time}</td><td>${nd.power.toFixed(1)}</td><td>${nd.pump.toFixed(3)}</td><td>${nd.rpm}</td></tr>`
       : `<tr><td class="l">${nd.name}</td><td colspan="5" style="color:#b91c1c">未识别到该节点</td></tr>`;
     tb.insertAdjacentHTML('beforeend', row);
   });

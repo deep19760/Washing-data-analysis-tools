@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { parseFile, fmtHMS, fmtClock } from './analyzer/parse.mjs';
 import { detectNodes, calcParams } from './analyzer/efficiency.mjs';
+import { parseProgramCheck, detectProgramCheck, calcProgramCheckParams } from './analyzer/program-check.mjs';
 
 const PORT = 3000;
 
@@ -73,17 +74,71 @@ function toResult(d, nd, g){
   };
 }
 
+function buildProgramCheckNodeList(d, nd){
+  const sec = i => (d.dt[i]-d.dt[0])/1000;
+  const mk = (f, idx, name) => ({
+    f, idx, name,
+    sec: idx>=0 ? Math.round(sec(idx)*10)/10 : null,
+    time: idx>=0 ? fmtHMS(d.dt[idx]) : null,
+    power: idx>=0 ? Math.round(d.power[idx]*10)/10 : null,
+    pump: idx>=0 ? Math.round(d.pump[idx]*1000)/1000 : null,
+    rpm: idx>=0 ? Math.round(d.rpm[idx]) : null,
+    temp: idx>=0 && d.temp.arr ? Math.round(d.temp.arr[idx]*10)/10 : null,
+  });
+  const list = [ mk('start', 0, '运行开始') ];
+  if(nd.heatStart>=0) list.push(mk('heatStart', nd.heatStart, '加热开始'));
+  if(nd.heatEnd>=0) list.push(mk('heatEnd', nd.heatEnd, '加热结束'));
+  list.push(mk('mainEnd', nd.mainEnd, '主洗涤结束（开始排水）'));
+  list.push(mk('spinStart', nd.spinStart, '最终脱水开始'));
+  list.push(mk('opEnd', nd.opEnd, '运行结束'));
+  return list;
+}
+
+function downSampleProgramCheck(d, nd){
+  const stride = Math.max(1, Math.floor((nd.opEnd+1)/1400));
+  const t=[], power=[], pump=[], valve=[], rpm=[];
+  for(let i=0;i<=nd.opEnd;i+=stride){
+    t.push(Math.round((d.dt[i]-d.dt[0])/1000));
+    power.push(Math.round(d.power[i]*10)/10);
+    pump.push(Math.round(d.pump[i]*1000)/1000);
+    valve.push(Math.round(d.valve[i]*1000)/1000);
+    rpm.push(Math.round(d.rpm[i]));
+  }
+  return { t, power, pump, valve, rpm };
+}
+
+function toProgramCheckResult(d, nd, g){
+  return {
+    n: d.n,
+    filename: d.filename,
+    nodes: buildProgramCheckNodeList(d, nd),
+    startClock: fmtClock(d.dt[0]),
+    endClock: fmtClock(d.dt[nd.opEnd]),
+    params: g,
+    series: downSampleProgramCheck(d, nd),
+    tempCol: nd.tempCol,
+  };
+}
+
 function handleAnalyze(body, res){
   try {
-    const { filename, content } = body || {};
+    const { filename, content, testType } = body || {};
     if(!content) throw new Error('缺少文件内容');
     const buf = Buffer.from(content, 'base64');
-    const d = parseFile(buf, filename || '');
-    const nd = detectNodes(d);
-    if(nd.opEnd < 0) throw new Error('未能识别运行结束节点，无法输出完整结果');
-    const g = calcParams(d, nd);
+    let result;
+    if(testType === 'program-check'){
+      const d = parseProgramCheck(buf);
+      const nd = detectProgramCheck(d);
+      if(nd.opEnd < 0) throw new Error('未能识别运行结束节点，无法输出完整结果');
+      result = toProgramCheckResult(d, nd, calcProgramCheckParams(d, nd));
+    } else {
+      const d = parseFile(buf, filename || '');
+      const nd = detectNodes(d);
+      if(nd.opEnd < 0) throw new Error('未能识别运行结束节点。该数据可能不是「能效」数据（缺少用水量/电量列），请确认测试类型——程序检查数据请选择「程序检查」');
+      result = toResult(d, nd, calcParams(d, nd));
+    }
     res.writeHead(200, { 'Content-Type':'application/json; charset=utf-8' });
-    res.end(JSON.stringify(toResult(d, nd, g)));
+    res.end(JSON.stringify(result));
   } catch(e) {
     res.writeHead(400, { 'Content-Type':'application/json; charset=utf-8' });
     res.end(JSON.stringify({ error: e.message }));
