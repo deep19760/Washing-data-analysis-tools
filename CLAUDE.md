@@ -4,34 +4,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-洗衣机运行周期数据分析工具：纯前端、可离线运行。上传洗衣机遥测数据（功率 / 累计用水量 / 累计电量），自动识别洗涤周期相位节点，计算能耗水耗并绘制时序图。交付物是单文件 `洗衣机数据分析软件.html`，由 `app.html` 打包而来。
+洗衣机运行周期数据分析工具：前后端分离架构。上传洗衣机遥测数据，识别洗涤周期相位节点，计算能耗水耗并绘制时序图。支持「能效」和「程序检查」两种测试类型。
 
 ## 常用命令
 
-无构建系统 / 包管理器 / 测试框架，均为 Windows PowerShell 5.1 脚本 + 静态 HTML：
+无构建系统 / 包管理器 / 测试框架，零 npm 依赖：
 
-- 打包成单文件 HTML + 生成启动 bat：
-  `powershell -File build_software.ps1`
-- 本地静态服务器（端口 8765，默认打开 app.html）：
-  `powershell -File server.ps1`
-
-脚本均使用 `$PSScriptRoot` 定位自身目录，可在任意位置运行。
+- 启动服务：`node backend/server.mjs`（端口 3000，浏览器打开 http://localhost:3000）
 
 ## 核心架构
 
-相位检测算法的全部实现都集中在 **`app.html`** 一个文件里：解析管线（`mapColumns` 表头列映射、`parseRows`、`parseExcelRows` / `parseTextRows`）→ 节点识别（`detectNodes`）→ 参数计算（`calcParams`）→ 渲染与自审查（`renderChart` / `renderTable` / `renderVerify`）。`lib/xlsx.full.min.js` 是 SheetJS 库，仅用于解析 Excel 文件，打包时被内联进交付物。
+前后端分离，接口为 `POST /analyze`（接收 `{ filename, content(base64), testType }`，按 `testType` 分发）：
 
-检测节点链：opStart → mainStart（首个 dW>0.001）→ heatStart/heatEnd（P>1000W，低功率加热有滚动窗回退 + 加热器电流闸门）→ 各次漂洗进水（burst ≥0.3 L，节点 = 脉冲前 1 s，含补水切除/合并/均匀性自检）→ spinStart（排水静默→电机启动，四级回退）→ spinHiE（P>300 末段或 P≥60 活动段终点）→ opEnd（连续静默 + 平台预检/脉冲回退）。完整权威规则见 `README.md`「算法判定规则」。
+- **后端 `backend/`**
+  - `server.mjs`：HTTP 服务（GET 静态前端 + POST /analyze + 节点/参数/图表序列化）
+  - `analyzer/parse.mjs`：能效数据解析（GBK/Excel，列名自动映射）
+  - `analyzer/efficiency.mjs`：能效算法（`detectNodes` / `calcParams`）
+  - `analyzer/program-check.mjs`：程序检查算法（主洗/漂洗/脱水判定）
+- **前端 `frontend/index.html`**：上传 + 测试类型下拉框 + 结果渲染（Canvas 图表）
+- **`lib/xlsx.full.min.js`**：SheetJS 0.18.5，被 `parse.mjs` 用 `createRequire` 加载
 
 ## 数据格式
 
-原始数据是 GBK（代码页 936）编码的制表符分隔文本（`.tsv`，部分 `.xls` 实为文本），也支持 Excel（`.xlsx` / `.xls`）。**前端按表头自动映射列名，无需手工指定列号**；必备字段为时间戳、功率(W)、累计用水量(L)、累计电量(kWh)，可选加热器电流(A)、转速(rpm) 等。
+- **能效数据**：Excel/文本，必备字段 时间戳/功率/累计用水量/累计电量（列名自动匹配，见 `parse.mjs` 的 `mapColumns`）。
+- **程序检查数据**：12 列 GBK TSV，固定列位（0-based）：主洗阀电流=1、排水泵电流=3、加热器电流=5、温度1=6、温度2=7、转速=8、功率=11（见 `program-check.mjs`）。
 
-## 编码注意事项（易踩坑）
+## 程序检查算法关键规则（易踩坑）
 
-- 数据解码由浏览器端 `TextDecoder` 完成（GBK / UTF-8 自动识别），无需在脚本侧处理。
-- `build_software.ps1` 用码点拼接中文文件名、启动 bat 用 GBK（936）写出，都是为了规避 PowerShell 5.1 对无 BOM 中文源文件乱码的问题。
+- **主洗涤结束**：排水泵电流首次大幅上升（基线×1.5，30s 内 ≥3 样本）。基线取前 60 秒最大值；阈值用纯相对值（`base*1.5`），**不要**加绝对最小偏移（`+0.005` 对排水泵电流极低的机型太苛刻）。
+- **漂洗次数**：主洗阀电流（列1）代表进水，阈值取「整个周期最大值的 50%」（不能用前 60 秒，进水可能 60 秒后才开始）；漂洗进水 = 主洗结束后、最终脱水前的进水段。
+- **温度列选择**：剔除全零列或含异常值（<0 或 >100℃）列，取剩余可用列。
+- **最终脱水**：最后一段转速 ≥300 的连续段（gap ≤60s 合并），加速起点往前回溯到转速 ≤120。
+
+## 编码注意事项
+
+- 数据解码用 Node 内置 `TextDecoder`（GBK/UTF-8 自动识别，`parse.mjs` 的 `parseFile` 用 `�` 计数判断乱码）。
+- Excel 解析用项目内 `lib/xlsx.full.min.js`（`type:'buffer'`）。
 
 ## 文档
 
-- `README.md` —— 项目说明 + 使用方法 + 数据格式 + 算法判定规则（权威）+ 构建方式。
+- `README.md`：项目说明 + 使用方法 + 数据格式 + 算法规则摘要。
