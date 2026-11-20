@@ -8,7 +8,8 @@ import { parseFile, fmtHMS, fmtClock } from './analyzer/parse.mjs';
 import { detectNodes, calcParams } from './analyzer/efficiency.mjs';
 import { parseProgramCheck, detectProgramCheck, calcProgramCheckParams } from './analyzer/program-check.mjs';
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '127.0.0.1';   // 由 Nginx 反代，只监听本机
 
 function buildNodeList(d, nd){
   const sec = i => (d.dt[i]-d.dt[0])/1000;
@@ -145,16 +146,24 @@ function handleAnalyze(body, res){
   }
 }
 
-const server = http.createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if(req.method === 'OPTIONS'){ res.writeHead(204); res.end(); return; }
+const MAX_BODY = 20 * 1024 * 1024;   // 请求体上限 20MB（约对应 15MB 原始文件）
 
+const server = http.createServer((req, res) => {
   if(req.method === 'POST' && req.url === '/analyze'){
     let raw = '';
-    req.on('data', c => { raw += c; });
+    let tooBig = false;
+    req.on('data', c => {
+      if(tooBig) return;
+      raw += c;
+      if(raw.length > MAX_BODY){
+        tooBig = true;
+        res.writeHead(413, {'Content-Type':'application/json; charset=utf-8'});
+        res.end(JSON.stringify({error:'文件过大，上限 20MB'}));
+        req.destroy();
+      }
+    });
     req.on('end', () => {
+      if(tooBig) return;
       try { handleAnalyze(JSON.parse(raw || '{}'), res); }
       catch(e){ res.writeHead(400, {'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify({error:'请求解析失败: '+e.message})); }
     });
@@ -178,6 +187,6 @@ const server = http.createServer((req, res) => {
   res.end('Not Found');
 });
 
-server.listen(PORT, () => {
-  console.log(`analysis server: http://localhost:${PORT}  (POST /analyze)`);
+server.listen(PORT, HOST, () => {
+  console.log(`analysis server: http://${HOST}:${PORT}  (POST /analyze)`);
 });
