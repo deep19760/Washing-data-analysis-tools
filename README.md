@@ -4,7 +4,7 @@
 
 ## 使用方法
 
-1. 启动服务：`node backend/server.mjs`
+1. 启动服务：`python backend/server.py`
 2. 浏览器打开 http://localhost:3000
 3. 选择测试类型（能效 / 程序检查），拖入数据文件。
 
@@ -25,28 +25,28 @@
 ## 技术栈
 
 - 前端：原生 HTML + JavaScript（Canvas 绘图）
-- 后端：Node.js（零 npm 依赖：原生 http + 内置 TextDecoder + 项目内 SheetJS）
+- 后端：Python 3（纯标准库：`http.server` + `json` + `base64`，零第三方依赖）
 
 ## 目录结构
 
 ```
 backend/
-  server.mjs                    # HTTP 服务（GET 静态前端 + POST /analyze）
-  analyzer/parse.mjs            # 能效数据解析（GBK/Excel，列名自动映射）
-  analyzer/efficiency.mjs       # 能效算法（detectNodes / calcParams）
-  analyzer/program-check.mjs    # 程序检查算法（主洗/漂洗/脱水判定）
-frontend/index.html             # 前端页面
-lib/xlsx.full.min.js            # SheetJS（Excel 解析）
+  server.py            # HTTP 服务（GET 静态前端 + POST /analyze，能效 + 程序检查）
+  parser.py            # 能效数据解析（GBK/UTF-8 文本，列名自动映射）
+  efficiency.py        # 能效算法（detect_nodes / calc_params）
+  program_check.py     # 程序检查算法（主洗/漂洗/脱水判定）
+frontend/index.html     # 前端页面
 ```
 
 ## 数据格式
 
 ### 能效数据
 
-- Excel（`.xls` / `.xlsx`）或文本（`.tsv` / `.csv` / `.txt`），GBK / UTF-8 自动识别
+- 文本（`.tsv` / `.csv` / `.txt`，含伪装成 `.xls` 的 GBK 制表符文本），GBK / UTF-8 自动识别
 - 必备字段（列名自动匹配）：时间戳、功率(W)、累计用水量(L)、累计电量(kWh)
 - 可选字段：加热器电流(A)、转速(rpm)
 - 采样间隔：支持 1 s 与 0.5 s
+- 说明：真正的二进制 Excel（`.xls` / `.xlsx`）暂不支持，需自行另存为文本后再上传
 
 ### 程序检查数据
 
@@ -67,7 +67,7 @@ lib/xlsx.full.min.js            # SheetJS（Excel 解析）
 
 ## 算法规则摘要
 
-### 能效（efficiency.mjs）
+### 能效（efficiency.py）
 
 - **有效水表选择**：按进水脉冲谱选择有完整周期变化的水量列；单水表机型禁用第二水表。
 - **mainStart**：有效水表首个 `dW > 0.001`。
@@ -76,7 +76,7 @@ lib/xlsx.full.min.js            # SheetJS（Excel 解析）
 - **最终脱水开始**：排水静默→电机启动，含四级回退与二次静默扫描。
 - **运行结束**：连续静默 + 平台预检/脉冲回退。
 
-### 程序检查（program-check.mjs）
+### 程序检查（program_check.py）
 
 - **主洗涤结束**：排水泵电流首次大幅上升（相对基线 1.5 倍，30s 内 ≥3 样本）。
 - **加热段**：功率 > 1000W。
